@@ -1,0 +1,157 @@
+# HomSwag — full-stack Podman Compose
+# Ports:  server 3000 | admin 3001 | app 3002
+# Build context for all app services is the deploy/ directory itself;
+# Containerfiles copy from repos/<name>/ which deploy.sh clones here.
+
+services:
+
+  # ────────────────────────────────────────────────────────────────
+  # Infrastructure
+  # ────────────────────────────────────────────────────────────────
+
+  mongodb:
+    image: mongo:8
+    container_name: homswag-mongodb
+    restart: unless-stopped
+    ports:
+      - "${MONGO_PORT:-27017}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-changeme}
+      MONGO_INITDB_DATABASE: homswag
+    volumes:
+      - ${MONGODB_DATA_SOURCE:-mongodb-data}:/data/db
+      - mongodb-config:/data/configdb
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - homswag-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: homswag-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command:
+      - redis-server
+      - "--requirepass"
+      - "${REDIS_PASSWORD:-changeme}"
+      - "--appendonly"
+      - "yes"
+      - "--appendfsync"
+      - "everysec"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - homswag-net
+
+  minio:
+    image: minio/minio:latest
+    container_name: homswag-minio
+    restart: unless-stopped
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-changeme}
+    command: minio server /data --console-address ":9001"
+    volumes:
+      - ${MINIO_DATA_SOURCE:-minio-data}:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - homswag-net
+
+  # ────────────────────────────────────────────────────────────────
+  # Applications
+  # ────────────────────────────────────────────────────────────────
+
+  server:
+    build:
+      context: .
+      dockerfile: Containerfile.server
+    image: homswag-server:latest
+    container_name: homswag-server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - ${DEPLOY_ENV_FILE:-.env}
+    volumes:
+      - server-uploads:/app/uploads
+      - server-logs:/app/logs
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - homswag-net
+
+  admin:
+    build:
+      context: .
+      dockerfile: Containerfile.admin
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3000}
+        VITE_AUTH_API_BASE_URL: ${VITE_AUTH_API_BASE_URL:-http://localhost:3000}
+        VITE_MEDIA_BASE_URL: ${VITE_MEDIA_BASE_URL:-http://localhost:3000}
+    image: homswag-admin:latest
+    container_name: homswag-admin
+    restart: unless-stopped
+    ports:
+      - "3001:80"
+    networks:
+      - homswag-net
+
+  app:
+    build:
+      context: .
+      dockerfile: Containerfile.app
+    image: homswag-app:latest
+    container_name: homswag-app
+    restart: unless-stopped
+    ports:
+      - "3002:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: ${NODE_ENV:-production}
+      # Expose the internal server address to the SSR runtime
+      SERVER_API_URL: ${SERVER_API_URL:-http://server:3000}
+    networks:
+      - homswag-net
+
+# ────────────────────────────────────────────────────────────────
+# Named volumes  (survive container restarts / rebuilds)
+# ────────────────────────────────────────────────────────────────
+volumes:
+  mongodb-data:
+  mongodb-config:
+  redis-data:
+  minio-data:
+  server-uploads:
+  server-logs:
+
+# ────────────────────────────────────────────────────────────────
+# Internal network
+# ────────────────────────────────────────────────────────────────
+networks:
+  homswag-net:
+    driver: bridge
+    name: homswag-net

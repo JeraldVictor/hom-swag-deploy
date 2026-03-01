@@ -1,0 +1,64 @@
+# Cloned repos (populated by deploy.sh pull)
+repos/
+
+# Runtime secrets
+.env
+.env.prod
+
+# OS
+.DS_Store
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+.DS_Store
+dist
+dist-ssr
+coverage
+
+# Editor directories and files
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+*.tsbuildinfo
+
+.eslintcache
+
+
+# === macOS System Files ===
+# Common macOS system files and helper files — safe to ignore in git
+# See: https://www.gitignore.io/api/macos
+# macOS Finder metadata
+# Already listed above but include here to clarify purpose and for future-proofing
+# (kept only once: .DS_Store)
+.AppleDouble
+.LSOverride
+
+# Folder icons and resource forks
+Icon?
+._*
+.VolumeIcon.icns
+
+# Spotlight index and file system events
+.Spotlight-V100
+.Trashes
+.fseventsd
+
+# Other macOS-specific files
+.AppleDB
+.AppleDesktop
+.DocumentRevisions-V100
+.TemporaryItems
+.apdisk
+docs/*
