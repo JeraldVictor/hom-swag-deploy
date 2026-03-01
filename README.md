@@ -80,16 +80,20 @@ Current defaults:
 ## Commands
 
 ```bash
-./deploy.sh [--env local|prod] [deploy|pull|build|up|restart|logs|status|down] [server|admin|app|all]
+./deploy.sh [--env local|prod] [--remote] [--no-cache] \
+            [deploy|pull|build|up|restart|logs|status|down] \
+            [server|admin|app|all]
 ```
 
 ### Full deploy
+
+Global flags may be placed before *or* after the command name; the script
+will ignore them when determining which services to act on.
 
 ```bash
 ./deploy.sh --env local deploy
 ./deploy.sh --env prod deploy
 ```
-
 ### Deploy only one app
 
 ```bash
@@ -102,7 +106,7 @@ Current defaults:
 
 ```bash
 ./deploy.sh --env local pull
-./deploy.sh --env local build
+./deploy.sh --env local build           # add --no-cache to force a clean build
 ./deploy.sh --env local up
 ```
 
