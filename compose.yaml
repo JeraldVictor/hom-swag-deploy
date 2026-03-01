@@ -103,10 +103,8 @@ services:
   # ────────────────────────────────────────────────────────────────
 
   server:
-    build:
-      context: .
-      dockerfile: Containerfile.server
-    image: homswag-server:latest
+    image: ghcr.io/jeraldvictor/hom-swag-server:${SERVER_IMAGE_TAG:-latest}
+    pull_policy: always
     container_name: homswag-server
     restart: unless-stopped
     ports:
@@ -125,14 +123,8 @@ services:
       - homswag-net
 
   admin:
-    build:
-      context: .
-      dockerfile: Containerfile.admin
-      args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:?VITE_API_BASE_URL must be set in selected env file}
-        VITE_AUTH_API_BASE_URL: ${VITE_AUTH_API_BASE_URL:?VITE_AUTH_API_BASE_URL must be set in selected env file}
-        VITE_MEDIA_BASE_URL: ${VITE_MEDIA_BASE_URL:?VITE_MEDIA_BASE_URL must be set in selected env file}
-    image: homswag-admin:latest
+    image: ghcr.io/jeraldvictor/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}
+    pull_policy: always
     container_name: homswag-admin
     restart: unless-stopped
     ports:
@@ -141,14 +133,8 @@ services:
       - homswag-net
 
   app:
-    build:
-      context: .
-      dockerfile: Containerfile.app
-      args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:?VITE_API_BASE_URL must be set in selected env file}
-        VITE_AUTH_API_BASE_URL: ${VITE_AUTH_API_BASE_URL:?VITE_AUTH_API_BASE_URL must be set in selected env file}
-        VITE_MEDIA_BASE_URL: ${VITE_MEDIA_BASE_URL:?VITE_MEDIA_BASE_URL must be set in selected env file}
-    image: homswag-app:latest
+    image: ghcr.io/jeraldvictor/hom-swag-app:${APP_IMAGE_TAG:-latest}
+    pull_policy: always
     container_name: homswag-app
     restart: unless-stopped
     ports:
