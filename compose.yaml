@@ -6,7 +6,7 @@
 services:
 
   nginx:
-    image: nginx:alpine
+    image: docker.io/nginx:alpine
     container_name: homswag-nginx
     restart: unless-stopped
     ports:
@@ -30,7 +30,7 @@ services:
   # ────────────────────────────────────────────────────────────────
 
   mongodb:
-    image: mongo:8
+    image: docker.io/mongo:8
     container_name: homswag-mongodb
     restart: unless-stopped
     ports:
@@ -52,7 +52,7 @@ services:
       - homswag-net
 
   redis:
-    image: redis:7-alpine
+    image: docker.io/redis:7-alpine
     container_name: homswag-redis
     restart: unless-stopped
     ports:
@@ -77,7 +77,7 @@ services:
       - homswag-net
 
   minio:
-    image: minio/minio:latest
+    image: docker.io/minio/minio:latest
     container_name: homswag-minio
     restart: unless-stopped
     ports:
