@@ -24,13 +24,19 @@ cd "$SCRIPT_DIR"
 # Examples:
 #   ./deploy.sh --env local deploy app
 #   ./deploy.sh -e prod up admin
+#   ./deploy.sh --remote deploy          # pull images from GHCR instead of building
 ENV_PROFILE="${DEPLOY_ENV:-local}"
+REMOTE_MODE=false   # when true we pull prebuilt images from registry instead of building
 while [[ "$#" -gt 0 ]]; do
     case "$1" in
         -e|--env)
             [[ "$#" -ge 2 ]] || die "Missing value for $1 (expected: local|prod)"
             ENV_PROFILE="$2"
             shift 2
+            ;;
+        -r|--remote)
+            REMOTE_MODE=true
+            shift
             ;;
         *)
             break
@@ -166,6 +172,15 @@ cmd_pull() {
     done
 }
 
+# helper: fetch prebuilt images from registry
+cmd_pull_images() {
+    echo ""
+    echo -e "${BOLD}━━━  Step 2 / 3 — Pull container images  ━━━${NC}"
+    log "Pulling images from registry..."
+    $COMPOSE pull
+    ok "Images pulled"
+}
+
 cmd_build() {
     echo ""
     echo -e "${BOLD}━━━  Step 2 / 3 — Build container images  ━━━${NC}"
@@ -238,7 +253,13 @@ cmd_deploy() {
     echo -e "${BOLD}║      HomSwag — Full Deploy           ║${NC}"
     echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
     cmd_pull "$@"
-    cmd_build "$@"
+
+    if [[ "$REMOTE_MODE" == true ]]; then
+        cmd_pull_images "$@"
+    else
+        cmd_build "$@"
+    fi
+
     cmd_up "$@"
 }
 
