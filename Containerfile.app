@@ -11,6 +11,17 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 COPY repos/app/package.json repos/app/pnpm-lock.yaml ./
 RUN pnpm install --no-frozen-lockfile
 
+# Build-time env vars (available to Vite/TanStack build)
+ARG VITE_API_BASE_URL=http://localhost:3000
+ARG VITE_AUTH_API_BASE_URL=http://localhost:3000
+ARG VITE_MEDIA_BASE_URL=http://localhost:3000
+
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
+    VITE_AUTH_API_BASE_URL=$VITE_AUTH_API_BASE_URL \
+    VITE_MEDIA_BASE_URL=$VITE_MEDIA_BASE_URL \
+    PUBLIC_API_BASE_URL=$VITE_API_BASE_URL \
+    MEDIA_BASE_URL=$VITE_MEDIA_BASE_URL
+
 # Copy source and build
 COPY repos/app/ .
 RUN pnpm build

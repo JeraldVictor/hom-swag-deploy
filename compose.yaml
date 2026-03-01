@@ -112,7 +112,7 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - ${DEPLOY_ENV_FILE:-.env}
+      - ${DEPLOY_ENV_FILE:?DEPLOY_ENV_FILE must be set to selected env file (e.g. .env.local or .env.prod)}
     volumes:
       - server-uploads:/app/uploads
       - server-logs:/app/logs
@@ -129,9 +129,9 @@ services:
       context: .
       dockerfile: Containerfile.admin
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:3000}
-        VITE_AUTH_API_BASE_URL: ${VITE_AUTH_API_BASE_URL:-http://localhost:3000}
-        VITE_MEDIA_BASE_URL: ${VITE_MEDIA_BASE_URL:-http://localhost:3000}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:?VITE_API_BASE_URL must be set in selected env file}
+        VITE_AUTH_API_BASE_URL: ${VITE_AUTH_API_BASE_URL:?VITE_AUTH_API_BASE_URL must be set in selected env file}
+        VITE_MEDIA_BASE_URL: ${VITE_MEDIA_BASE_URL:?VITE_MEDIA_BASE_URL must be set in selected env file}
     image: homswag-admin:latest
     container_name: homswag-admin
     restart: unless-stopped
@@ -144,6 +144,10 @@ services:
     build:
       context: .
       dockerfile: Containerfile.app
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:?VITE_API_BASE_URL must be set in selected env file}
+        VITE_AUTH_API_BASE_URL: ${VITE_AUTH_API_BASE_URL:?VITE_AUTH_API_BASE_URL must be set in selected env file}
+        VITE_MEDIA_BASE_URL: ${VITE_MEDIA_BASE_URL:?VITE_MEDIA_BASE_URL must be set in selected env file}
     image: homswag-app:latest
     container_name: homswag-app
     restart: unless-stopped
