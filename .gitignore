@@ -5,6 +5,8 @@ repos/
 .env
 .env.prod
 
+./nginx/certs/*
+
 # OS
 .DS_Store
 

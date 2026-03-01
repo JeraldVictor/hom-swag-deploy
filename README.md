@@ -62,6 +62,19 @@ Current defaults:
 - Admin: `https://admin.alpha.homswag.com`
 - API: `https://api.alpha.homswag.com`
 
+### Nginx TLS routing
+
+- Reverse proxy config: `nginx/prod.conf`
+- Public ports are served by the `nginx` service on `80` and `443`
+- Certificates are mounted from `NGINX_CERTS_PATH` (default: `./nginx/certs`)
+- Expected cert files:
+  - `nginx/certs/alpha.homswag.com/fullchain.pem`
+  - `nginx/certs/alpha.homswag.com/privkey.pem`
+  - `nginx/certs/admin.alpha.homswag.com/fullchain.pem`
+  - `nginx/certs/admin.alpha.homswag.com/privkey.pem`
+  - `nginx/certs/api.alpha.homswag.com/fullchain.pem`
+  - `nginx/certs/api.alpha.homswag.com/privkey.pem`
+
 ---
 
 ## Commands
