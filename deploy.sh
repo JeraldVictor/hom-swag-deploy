@@ -66,13 +66,13 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < "$ENV_FILE"
 
 # ── Discover compose binary ────────────────────────────────────────────────────
-if command -v podman &>/dev/null; then
-    COMPOSE_BIN="podman compose"
-elif command -v docker &>/dev/null; then
-    warn "podman not found — falling back to docker compose"
+if command -v docker &>/dev/null; then
     COMPOSE_BIN="docker compose"
+elif command -v podman &>/dev/null; then
+    warn "docker not found — falling back to podman compose"
+    COMPOSE_BIN="podman compose"
 else
-    die "Neither podman nor docker found. Please install one of them."
+    die "Neither docker nor podman found. Please install one of them."
 fi
 
 COMPOSE="$COMPOSE_BIN --env-file $ENV_FILE -f compose.yaml"
@@ -128,19 +128,18 @@ cmd_health() {
 
     local max_wait="${HEALTH_TIMEOUT:-90}"
     local interval=5
-    local elapsed
     local all_ok=true
 
-    declare -A endpoints=(
-        [server]="http://localhost:${SERVER_PORT}/health"
-        [admin]="http://localhost:${ADMIN_PORT}"
-        [app]="http://localhost:${APP_PORT}"
-    )
+    # Parallel arrays — avoids associative arrays (bash 3.2 on macOS)
+    local svcs=("server"                                  "admin"                       "app")
+    local urls=("http://localhost:${SERVER_PORT}/health"  "http://localhost:${ADMIN_PORT}"  "http://localhost:${APP_PORT}")
 
-    for svc in server admin app; do
-        local url="${endpoints[$svc]}"
+    local i
+    for i in 0 1 2; do
+        local svc="${svcs[$i]}"
+        local url="${urls[$i]}"
         local svc_ok=false
-        elapsed=0
+        local elapsed=0
 
         log "Waiting for $svc at $url (timeout: ${max_wait}s) ..."
         while [[ "$elapsed" -lt "$max_wait" ]]; do
@@ -175,6 +174,49 @@ cmd_restart() {
     $COMPOSE ps
 }
 
+# Force-recreate one or all services without pulling new images
+cmd_recreate() {
+    local svcs=("$@")
+    if [[ "${#svcs[@]}" -gt 0 ]]; then
+        log "Force-recreating service(s): ${svcs[*]} ..."
+    else
+        log "Force-recreating all services ..."
+    fi
+    $COMPOSE up -d --force-recreate "${svcs[@]}"
+    ok "Done"
+    $COMPOSE ps
+}
+
+# Pull latest image(s) then force-recreate — scoped to one or all services
+cmd_refresh() {
+    local svcs=("$@")
+    if [[ "${#svcs[@]}" -gt 0 ]]; then
+        log "Refreshing service(s): ${svcs[*]} ..."
+        $COMPOSE pull "${svcs[@]}"
+        $COMPOSE up -d --force-recreate "${svcs[@]}"
+    else
+        log "Refreshing all services ..."
+        $COMPOSE pull
+        $COMPOSE up -d --force-recreate
+    fi
+    ok "Done"
+    $COMPOSE ps
+}
+
+# Full clean: stop containers, remove cached images, fresh pull, start
+cmd_clean() {
+    echo ""
+    echo -e "${BOLD}━━━  Clean deploy  ━━━${NC}"
+    warn "Stopping containers and removing cached images ..."
+    $COMPOSE down --rmi all || true
+    echo ""
+    log "Pulling fresh images ..."
+    $COMPOSE pull
+    echo ""
+    cmd_up
+    cmd_health
+}
+
 cmd_down() {
     warn "Stopping all containers (data volumes are preserved) ..."
     $COMPOSE down || true
@@ -196,26 +238,32 @@ COMMAND="${1:-deploy}"
 shift || true
 
 case "$COMMAND" in
-    deploy|"")  cmd_deploy          ;;
-    pull)       cmd_pull            ;;
-    up)         cmd_up              ;;
-    restart)    cmd_restart "$@"    ;;
-    down)       cmd_down            ;;
-    logs)       cmd_logs    "$@"    ;;
-    status)     cmd_status          ;;
-    health)     cmd_health          ;;
+    deploy|"")  cmd_deploy             ;;
+    pull)       cmd_pull               ;;
+    up)         cmd_up                 ;;
+    restart)    cmd_restart   "$@"     ;;
+    recreate)   cmd_recreate  "$@"     ;;
+    refresh)    cmd_refresh   "$@"     ;;
+    clean)      cmd_clean              ;;
+    down)       cmd_down               ;;
+    logs)       cmd_logs      "$@"     ;;
+    status)     cmd_status             ;;
+    health)     cmd_health             ;;
     *)
         echo ""
-        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|down|logs|status|health}"
+        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|logs|status|health}"
         echo ""
-        echo "  deploy   Pull images then start all services (default)"
-        echo "  pull     Pull latest images from GHCR only"
-        echo "  up       Start services without pulling images"
-        echo "  restart  Restart containers  (e.g. ./deploy.sh restart server)"
-        echo "  down     Stop and remove containers (volumes kept)"
-        echo "  logs     Tail logs            (e.g. ./deploy.sh logs app)"
-        echo "  status   Show running containers"
-        echo "  health   Validate service HTTP endpoints"
+        echo "  deploy    Pull images then start all services (default)"
+        echo "  pull      Pull latest images from GHCR only"
+        echo "  up        Start services without pulling images"
+        echo "  restart   Restart containers          (e.g. ./deploy.sh restart server)"
+        echo "  recreate  Force-recreate containers   (e.g. ./deploy.sh recreate server)"
+        echo "  refresh   Pull + force-recreate       (e.g. ./deploy.sh refresh server)"
+        echo "  clean     Remove cached images, fresh pull and start all services"
+        echo "  down      Stop and remove containers (volumes kept)"
+        echo "  logs      Tail logs                  (e.g. ./deploy.sh logs app)"
+        echo "  status    Show running containers"
+        echo "  health    Validate service HTTP endpoints"
         echo ""
         exit 1
         ;;

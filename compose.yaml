@@ -90,6 +90,7 @@ services:
     env_file:
       - ${DEPLOY_ENV_FILE:-.env.local}
     volumes:
+      - ${DEPLOY_ENV_FILE:-.env.local}:/app/.env:ro
       - ${UPLOAD_SOURCE:-./uploads}:/app/uploads
       - ${LOG_PATH:-./logs}:/app/logs
     depends_on:
