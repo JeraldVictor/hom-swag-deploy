@@ -1,5 +1,6 @@
 # Cloned repos (populated by deploy.sh pull)
 repos/
+data/
 
 # Runtime secrets
 .env

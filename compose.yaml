@@ -1,29 +1,8 @@
-# HomSwag — full-stack Podman Compose
-# Ports:  server 3000 | admin 3001 | app 3002
-# Build context for all app services is the deploy/ directory itself;
-# Containerfiles copy from repos/<name>/ which deploy.sh clones here.
+# HomSwag — Docker/Podman Compose
+# Images pulled from GHCR — no local build required
+# Ports: server ${SERVER_PORT:-3000} | admin ${ADMIN_PORT:-3001} | app ${APP_PORT:-3002}
 
 services:
-
-  nginx:
-    image: docker.io/nginx:alpine
-    container_name: homswag-nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/prod.conf:/etc/nginx/conf.d/default.conf:ro
-      - ${NGINX_CERTS_PATH:-./nginx/certs}:/etc/nginx/certs:ro
-    depends_on:
-      server:
-        condition: service_started
-      admin:
-        condition: service_started
-      app:
-        condition: service_started
-    networks:
-      - homswag-net
 
   # ────────────────────────────────────────────────────────────────
   # Infrastructure
@@ -55,8 +34,7 @@ services:
     image: docker.io/redis:7-alpine
     container_name: homswag-redis
     restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    # redis is internal only — no external port exposed
     command:
       - redis-server
       - "--requirepass"
@@ -99,7 +77,7 @@ services:
       - homswag-net
 
   # ────────────────────────────────────────────────────────────────
-  # Applications
+  # Applications (pre-built images — pulled from GHCR)
   # ────────────────────────────────────────────────────────────────
 
   server:
@@ -108,16 +86,15 @@ services:
     container_name: homswag-server
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${SERVER_PORT:-3000}:3000"
     env_file:
-      - ${DEPLOY_ENV_FILE:?DEPLOY_ENV_FILE must be set to selected env file (e.g. .env.local or .env.prod)}
-    volumes:
-      - server-uploads:/app/uploads
-      - server-logs:/app/logs
+      - ${DEPLOY_ENV_FILE:-.env.local}
     depends_on:
       mongodb:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     networks:
       - homswag-net
@@ -128,7 +105,7 @@ services:
     container_name: homswag-admin
     restart: unless-stopped
     ports:
-      - "3001:80"
+      - "${ADMIN_PORT:-3001}:80"
     networks:
       - homswag-net
 
@@ -138,25 +115,20 @@ services:
     container_name: homswag-app
     restart: unless-stopped
     ports:
-      - "3002:3000"
-    environment:
-      PORT: 3000
-      NODE_ENV: ${NODE_ENV:-production}
-      # Expose the internal server address to the SSR runtime
-      SERVER_API_URL: ${SERVER_API_URL:-http://server:3000}
+      - "${APP_PORT:-3002}:3000"
+    env_file:
+      - ${DEPLOY_ENV_FILE:-.env.local}
     networks:
       - homswag-net
 
 # ────────────────────────────────────────────────────────────────
-# Named volumes  (survive container restarts / rebuilds)
+# Named volumes (survive container restarts / rebuilds)
 # ────────────────────────────────────────────────────────────────
 volumes:
   mongodb-data:
   mongodb-config:
   redis-data:
   minio-data:
-  server-uploads:
-  server-logs:
 
 # ────────────────────────────────────────────────────────────────
 # Internal network
