@@ -8,8 +8,14 @@
 #   ./deploy.sh pull                 # pull latest images only
 #   ./deploy.sh up                   # start services (skip image pull)
 #   ./deploy.sh restart [svc...]     # restart one or all containers
+#   ./deploy.sh recreate [svc...]    # force-recreate one or all containers
+#   ./deploy.sh refresh [svc...]     # pull + force-recreate one or all containers
+#   ./deploy.sh clean                # remove cached images, fresh pull and start
 #   ./deploy.sh down                 # stop and remove containers (volumes kept)
-#   ./deploy.sh logs [svc...]        # tail logs
+#   ./deploy.sh logs [svc...]        # follow logs, last 100 lines
+#   ./deploy.sh dump <svc>           # print last 100 lines (no follow)
+#   ./deploy.sh logs-all <svc>       # print ALL logs for a service
+#   ./deploy.sh shell <svc>          # open interactive terminal in container
 #   ./deploy.sh status               # show running containers
 #   ./deploy.sh health               # validate service HTTP endpoints
 # =============================================================================
@@ -223,8 +229,34 @@ cmd_down() {
     ok "All containers stopped"
 }
 
+# Tail last 100 lines and follow
 cmd_logs() {
     $COMPOSE logs -f --tail=100 "$@"
+}
+
+# Dump last 100 lines without following
+cmd_logs_dump() {
+    local svc="${1:-}"
+    [[ -n "$svc" ]] || die "Usage: ./deploy.sh dump <service>"
+    log "Last 100 lines of $svc:"
+    $COMPOSE logs --tail=100 "$svc"
+}
+
+# Dump ALL logs for a service (no tail limit)
+cmd_logs_all() {
+    local svc="${1:-}"
+    [[ -n "$svc" ]] || die "Usage: ./deploy.sh logs-all <service>"
+    log "All logs for $svc:"
+    $COMPOSE logs --no-log-prefix "$svc"
+}
+
+# Open an interactive shell inside a running container
+cmd_shell() {
+    local svc="${1:-}"
+    [[ -n "$svc" ]] || die "Usage: ./deploy.sh shell <service>"
+    local container="homswag-${svc}"
+    log "Opening shell in container: $container"
+    docker exec -it "$container" sh -c 'which bash > /dev/null 2>&1 && exec bash || exec sh'
 }
 
 cmd_status() {
@@ -247,11 +279,14 @@ case "$COMMAND" in
     clean)      cmd_clean              ;;
     down)       cmd_down               ;;
     logs)       cmd_logs      "$@"     ;;
+    dump)       cmd_logs_dump "$@"     ;;
+    logs-all)   cmd_logs_all  "$@"     ;;
+    shell)      cmd_shell     "$@"     ;;
     status)     cmd_status             ;;
     health)     cmd_health             ;;
     *)
         echo ""
-        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|logs|status|health}"
+        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|logs|dump|logs-all|shell|status|health}"
         echo ""
         echo "  deploy    Pull images then start all services (default)"
         echo "  pull      Pull latest images from GHCR only"
@@ -261,7 +296,10 @@ case "$COMMAND" in
         echo "  refresh   Pull + force-recreate       (e.g. ./deploy.sh refresh server)"
         echo "  clean     Remove cached images, fresh pull and start all services"
         echo "  down      Stop and remove containers (volumes kept)"
-        echo "  logs      Tail logs                  (e.g. ./deploy.sh logs app)"
+        echo "  logs      Follow logs, last 100 lines  (e.g. ./deploy.sh logs app)"
+        echo "  dump      Print last 100 lines, no follow (e.g. ./deploy.sh dump app)"
+        echo "  logs-all  Print ALL logs for a service   (e.g. ./deploy.sh logs-all server)"
+        echo "  shell     Open terminal in container     (e.g. ./deploy.sh shell server)"
         echo "  status    Show running containers"
         echo "  health    Validate service HTTP endpoints"
         echo ""
