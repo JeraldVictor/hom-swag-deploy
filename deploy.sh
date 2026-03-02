@@ -274,6 +274,14 @@ cmd_status() {
     $COMPOSE ps
 }
 
+# Run the compiled seed script inside the server container
+cmd_seed() {
+    local container="homswag-server"
+    log "Running seed in container: $container ..."
+    docker exec -it "$container" node dist/seed.cjs "$@"
+    ok "Seed complete"
+}
+
 # =============================================================================
 # Entrypoint
 # =============================================================================
@@ -296,6 +304,7 @@ case "$COMMAND" in
     shell)      cmd_shell     "$@"     ;;
     status)     cmd_status             ;;
     health)     cmd_health             ;;
+    seed)       cmd_seed      "$@"     ;;
     *)
         echo ""
         echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health}"
@@ -315,6 +324,8 @@ case "$COMMAND" in
         echo "  shell     Open terminal in container     (e.g. ./deploy.sh shell server)"
         echo "  status    Show running containers"
         echo "  health    Validate service HTTP endpoints"
+        echo "  seed      Run database seed inside the server container"
+        echo "             (e.g. ./deploy.sh seed --upsert --only=users,products)"
         echo ""
         exit 1
         ;;
