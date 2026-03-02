@@ -89,6 +89,9 @@ services:
       - "${SERVER_PORT:-3000}:3000"
     env_file:
       - ${DEPLOY_ENV_FILE:-.env.local}
+    volumes:
+      - ${UPLOAD_SOURCE:-./uploads}:/app/uploads
+      - ${LOG_PATH:-./logs}:/app/logs
     depends_on:
       mongodb:
         condition: service_healthy
