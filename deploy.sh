@@ -12,6 +12,7 @@
 #   ./deploy.sh refresh [svc...]     # pull + force-recreate one or all containers
 #   ./deploy.sh clean                # remove cached images, fresh pull and start
 #   ./deploy.sh down                 # stop and remove containers (volumes kept)
+#   ./deploy.sh prune                # docker system prune -a --volumes (full cleanup)
 #   ./deploy.sh logs [svc...]        # follow logs, last 100 lines
 #   ./deploy.sh dump <svc>           # print last 100 lines (no follow)
 #   ./deploy.sh logs-all <svc>       # print ALL logs for a service
@@ -229,6 +230,16 @@ cmd_down() {
     ok "All containers stopped"
 }
 
+# Remove ALL unused containers, images, networks and volumes (full Docker cleanup)
+cmd_prune() {
+    warn "This will remove ALL unused Docker resources (containers, images, networks, volumes)."
+    warn "Running: docker system prune -a --volumes"
+    read -r -p "Are you sure? [y/N] " confirm
+    [[ "$confirm" =~ ^[Yy]$ ]] || { log "Aborted."; exit 0; }
+    docker system prune -a --volumes
+    ok "Docker system pruned."
+}
+
 # Tail last 100 lines and follow
 cmd_logs() {
     $COMPOSE logs -f --tail=100 "$@"
@@ -278,6 +289,7 @@ case "$COMMAND" in
     refresh)    cmd_refresh   "$@"     ;;
     clean)      cmd_clean              ;;
     down)       cmd_down               ;;
+    prune)      cmd_prune              ;;
     logs)       cmd_logs      "$@"     ;;
     dump)       cmd_logs_dump "$@"     ;;
     logs-all)   cmd_logs_all  "$@"     ;;
@@ -286,7 +298,7 @@ case "$COMMAND" in
     health)     cmd_health             ;;
     *)
         echo ""
-        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|logs|dump|logs-all|shell|status|health}"
+        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health}"
         echo ""
         echo "  deploy    Pull images then start all services (default)"
         echo "  pull      Pull latest images from GHCR only"
@@ -296,6 +308,7 @@ case "$COMMAND" in
         echo "  refresh   Pull + force-recreate       (e.g. ./deploy.sh refresh server)"
         echo "  clean     Remove cached images, fresh pull and start all services"
         echo "  down      Stop and remove containers (volumes kept)"
+        echo "  prune     Remove ALL unused Docker resources (docker system prune -a --volumes)"
         echo "  logs      Follow logs, last 100 lines  (e.g. ./deploy.sh logs app)"
         echo "  dump      Print last 100 lines, no follow (e.g. ./deploy.sh dump app)"
         echo "  logs-all  Print ALL logs for a service   (e.g. ./deploy.sh logs-all server)"
