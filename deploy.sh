@@ -4,13 +4,15 @@
 #
 # Usage:
 #   ./deploy.sh                      # pull images from GHCR + start all services
-#   ./deploy.sh --env prod           # use .env.prod instead of .env.local
+#   ./deploy.sh prod                 # use .env.prod and deploy (shorthand for --env prod)
+#   ./deploy.sh --env prod           # same as above (explicit flag form)
+#   ./deploy.sh prod logs [svc...]   # any sub-command can be prefixed with prod|local
 #   ./deploy.sh pull                 # pull latest images only
 #   ./deploy.sh up                   # start services (skip image pull)
 #   ./deploy.sh restart [svc...]     # restart one or all containers
 #   ./deploy.sh recreate [svc...]    # force-recreate one or all containers
 #   ./deploy.sh refresh [svc...]     # pull + force-recreate one or all containers
-#   ./deploy.sh clean                # remove cached images, fresh pull and start
+#   ./deploy.sh clean                # fresh pull, start, verify health, then prune old images
 #   ./deploy.sh down                 # stop and remove containers (volumes kept)
 #   ./deploy.sh prune                # docker system prune -a --volumes (full cleanup)
 #   ./deploy.sh logs [svc...]        # follow logs, last 100 lines
@@ -47,6 +49,10 @@ while [[ "$#" -gt 0 ]]; do
             [[ "$#" -ge 2 ]] || die "Missing value for --env (expected: local|prod)"
             ENV_PROFILE="$2"
             shift 2
+            ;;
+        prod|production|local)
+            ENV_PROFILE="$1"
+            shift
             ;;
         *) break ;;
     esac
@@ -127,6 +133,10 @@ cmd_deploy() {
     cmd_pull
     cmd_up
     cmd_health
+    # New stack is confirmed healthy — prune dangling/old images
+    log "Pruning dangling images ..."
+    docker image prune -f
+    ok "Deploy complete."
 }
 
 cmd_health() {
@@ -210,18 +220,9 @@ cmd_refresh() {
     $COMPOSE ps
 }
 
-# Full clean: stop containers, remove cached images, fresh pull, start
+# Full clean: same as deploy (pull, start, health check, prune dangling images)
 cmd_clean() {
-    echo ""
-    echo -e "${BOLD}━━━  Clean deploy  ━━━${NC}"
-    warn "Stopping containers and removing cached images ..."
-    $COMPOSE down --rmi all || true
-    echo ""
-    log "Pulling fresh images ..."
-    $COMPOSE pull
-    echo ""
-    cmd_up
-    cmd_health
+    cmd_deploy
 }
 
 cmd_down() {
@@ -315,7 +316,7 @@ case "$COMMAND" in
         echo "  restart   Restart containers          (e.g. ./deploy.sh restart server)"
         echo "  recreate  Force-recreate containers   (e.g. ./deploy.sh recreate server)"
         echo "  refresh   Pull + force-recreate       (e.g. ./deploy.sh refresh server)"
-        echo "  clean     Remove cached images, fresh pull and start all services"
+        echo "  clean     Fresh pull, start all services, verify health, then prune old images"
         echo "  down      Stop and remove containers (volumes kept)"
         echo "  prune     Remove ALL unused Docker resources (docker system prune -a --volumes)"
         echo "  logs      Follow logs, last 100 lines  (e.g. ./deploy.sh logs app)"
