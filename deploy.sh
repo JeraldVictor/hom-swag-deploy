@@ -123,6 +123,153 @@ cmd_up() {
     echo ""
 }
 
+# ---------------------------------------------------------------------------
+# cmd_safe_deploy — zero-downtime production deployment
+#
+# Flow:
+#   1. Pull new images (live containers keep running their current images)
+#   2. Start canary copies of the 3 app services on temporary offset ports
+#      connected to the existing homswag-net (reuses live DB/Redis/MinIO)
+#   3. Health-check the canary containers
+#   4a. PASS → remove canary, force-recreate real containers, final health check
+#   4b. FAIL → remove canary, old stack stays up, exit 1
+# ---------------------------------------------------------------------------
+cmd_safe_deploy() {
+    local canary_server_port=$(( SERVER_PORT + 100 ))
+    local canary_admin_port=$(( ADMIN_PORT  + 100 ))
+    local canary_app_port=$(( APP_PORT    + 100 ))
+
+    local server_img="ghcr.io/jeraldvictor/hom-swag-server:${SERVER_IMAGE_TAG:-latest}"
+    local admin_img="ghcr.io/jeraldvictor/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}"
+    local app_img="ghcr.io/jeraldvictor/hom-swag-app:${APP_IMAGE_TAG:-latest}"
+
+    # Ensure canary containers are removed on exit/interrupt in all cases
+    cleanup_canary() {
+        log "Cleaning up canary containers ..."
+        docker rm -f homswag-canary-server homswag-canary-admin homswag-canary-app 2>/dev/null || true
+    }
+    trap cleanup_canary EXIT INT TERM
+
+    # ── 1. Pull new images ────────────────────────────────────────────────────
+    cmd_pull
+
+    # ── 2a. If nothing is running yet, skip the canary dance ─────────────────
+    if ! $COMPOSE ps --quiet 2>/dev/null | grep -q .; then
+        log "No existing stack detected — performing standard deploy"
+        trap - EXIT INT TERM
+        cmd_up
+        cmd_health
+        log "Pruning dangling images ..."
+        docker image prune -f
+        ok "Deploy complete."
+        return
+    fi
+
+    log "Live stack detected — starting canary containers alongside it"
+
+    # ── 2b. Resolve volume paths to absolute paths ────────────────────────────
+    local env_file_abs upload_src log_src
+    env_file_abs="$(realpath "$ENV_FILE")"
+    upload_src="${UPLOAD_SOURCE:-${SCRIPT_DIR}/uploads}"
+    log_src="${LOG_PATH:-${SCRIPT_DIR}/logs}"
+    [[ "$upload_src" = /* ]] || upload_src="${SCRIPT_DIR}/${upload_src}"
+    [[ "$log_src"    = /* ]] || log_src="${SCRIPT_DIR}/${log_src}"
+
+    # Remove any leftover canary containers from a previous failed run
+    docker rm -f homswag-canary-server homswag-canary-admin homswag-canary-app 2>/dev/null || true
+
+    # ── 2c. Start canary containers ───────────────────────────────────────────
+    echo ""
+    echo -e "${BOLD}━━━  Launching canary containers  ━━━${NC}"
+    log "Canary ports → server:${canary_server_port}  admin:${canary_admin_port}  app:${canary_app_port}"
+
+    docker run -d \
+        --name homswag-canary-server \
+        --network homswag-net \
+        -p "${canary_server_port}:3000" \
+        --env-file "$ENV_FILE" \
+        -v "${env_file_abs}:/app/.env:ro" \
+        -v "${upload_src}:/app/uploads" \
+        -v "${log_src}:/app/logs" \
+        "$server_img" || die "Failed to start canary server"
+
+    docker run -d \
+        --name homswag-canary-admin \
+        --network homswag-net \
+        -p "${canary_admin_port}:80" \
+        "$admin_img" || die "Failed to start canary admin"
+
+    docker run -d \
+        --name homswag-canary-app \
+        --network homswag-net \
+        -p "${canary_app_port}:3000" \
+        --env-file "$ENV_FILE" \
+        "$app_img" || die "Failed to start canary app"
+
+    ok "Canary containers started"
+
+    # ── 3. Health-check the canary containers ─────────────────────────────────
+    echo ""
+    echo -e "${BOLD}━━━  Canary health validation  ━━━${NC}"
+
+    local max_wait="${HEALTH_TIMEOUT:-90}"
+    local interval=5
+    local canary_ok=true
+
+    local svcs=("server"                                         "admin"                              "app")
+    local urls=("http://localhost:${canary_server_port}/health"  "http://localhost:${canary_admin_port}"  "http://localhost:${canary_app_port}")
+
+    local i
+    for i in 0 1 2; do
+        local svc="${svcs[$i]}"
+        local url="${urls[$i]}"
+        local svc_ok=false
+        local elapsed=0
+
+        log "Waiting for canary ${svc} at ${url} (timeout: ${max_wait}s) ..."
+        while [[ "$elapsed" -lt "$max_wait" ]]; do
+            if curl -sf --max-time 3 "$url" &>/dev/null; then
+                ok "Canary ${svc} is healthy  (${url})"
+                svc_ok=true
+                break
+            fi
+            sleep "$interval"
+            elapsed=$(( elapsed + interval ))
+        done
+
+        if [[ "$svc_ok" == false ]]; then
+            warn "Canary ${svc} did NOT respond at ${url} within ${max_wait}s"
+            canary_ok=false
+        fi
+    done
+
+    # ── 4. Act on canary result ───────────────────────────────────────────────
+    echo ""
+    if [[ "$canary_ok" == false ]]; then
+        warn "Canary health checks FAILED."
+        warn "Old production stack is preserved and still running."
+        warn "Run './deploy.sh logs' to investigate the canary output."
+        # EXIT trap fires → cleanup_canary removes canary containers
+        exit 1
+    fi
+
+    ok "Canary is healthy — swapping production stack ..."
+
+    # Remove canary containers before reclaiming the real ports
+    cleanup_canary
+    trap - EXIT INT TERM
+
+    # Force-recreate only the 3 app services (infra is untouched)
+    $COMPOSE up -d --force-recreate server admin app
+
+    # Final production health check (if this fails the script exits non-zero)
+    cmd_health
+
+    log "Pruning dangling images ..."
+    docker image prune -f
+    ok "Zero-downtime deploy complete."
+}
+
 cmd_deploy() {
     echo ""
     echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
@@ -130,13 +277,18 @@ cmd_deploy() {
     echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
     echo -e "  Env profile : ${BOLD}${ENV_PROFILE}${NC}  (${ENV_FILE})"
     echo ""
-    cmd_pull
-    cmd_up
-    cmd_health
-    # New stack is confirmed healthy — prune dangling/old images
-    log "Pruning dangling images ..."
-    docker image prune -f
-    ok "Deploy complete."
+
+    if [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]; then
+        cmd_safe_deploy
+    else
+        cmd_pull
+        cmd_up
+        cmd_health
+        # New stack is confirmed healthy — prune dangling/old images
+        log "Pruning dangling images ..."
+        docker image prune -f
+        ok "Deploy complete."
+    fi
 }
 
 cmd_health() {
