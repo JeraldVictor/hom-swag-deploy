@@ -228,10 +228,37 @@ cmd_safe_deploy() {
 
         log "Waiting for canary ${svc} at ${url} (timeout: ${max_wait}s) ..."
         while [[ "$elapsed" -lt "$max_wait" ]]; do
-            if curl -sf --max-time 3 "$url" &>/dev/null; then
+            local response
+            local http_code
+            local tmp_body
+
+            tmp_body=$(mktemp /tmp/canary_XXXXXX)
+            http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$url" || echo "000")
+            response=$(cat "$tmp_body")
+            rm -f "$tmp_body"
+
+            if [[ "$http_code" == "200" ]]; then
                 ok "Canary ${svc} is healthy  (${url})"
                 svc_ok=true
                 break
+            elif [[ "$http_code" != "000" && "$svc" == "server" ]]; then
+                # Server responded but maybe with 503/207
+                if echo "$response" | grep -q '"services":'; then
+                    warn "Canary ${svc} responded but reports UNHEALTHY sub-services"
+                    for sub in Server MongoDB Redis MinIO; do
+                        local sub_line=$(echo "$response" | grep -o "\"service\":\"$sub\",\"status\":\"[^\"]*\"" || true)
+                        if [[ -n "$sub_line" ]]; then
+                            local sub_status=$(echo "$sub_line" | sed 's/.*"status":"\([^"]*\)".*/\1/')
+                            if [[ "$sub_status" == "healthy" ]]; then
+                                echo -e "      ${GREEN}•${NC} $sub: $sub_status"
+                            else
+                                echo -e "      ${RED}•${NC} $sub: $sub_status"
+                            fi
+                        fi
+                    done
+                    canary_ok=false
+                    break
+                fi
             fi
             sleep "$interval"
             elapsed=$(( elapsed + interval ))
@@ -303,8 +330,13 @@ cmd_health() {
     local svcs=("server"                                  "admin"                       "app")
     local urls=("http://localhost:${SERVER_PORT}/health"  "http://localhost:${ADMIN_PORT}"  "http://localhost:${APP_PORT}")
 
+    if [[ "${MINIO_ENABLED:-false}" == "true" ]]; then
+        svcs+=("minio")
+        urls+=("http://localhost:${MINIO_PORT:-9000}/minio/health/live")
+    fi
+
     local i
-    for i in 0 1 2; do
+    for i in "${!svcs[@]}"; do
         local svc="${svcs[$i]}"
         local url="${urls[$i]}"
         local svc_ok=false
@@ -312,10 +344,37 @@ cmd_health() {
 
         log "Waiting for $svc at $url (timeout: ${max_wait}s) ..."
         while [[ "$elapsed" -lt "$max_wait" ]]; do
-            if curl -sf --max-time 3 "$url" &>/dev/null; then
+            local response
+            local http_code
+            local tmp_body
+
+            tmp_body=$(mktemp /tmp/health_XXXXXX)
+            http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$url" || echo "000")
+            response=$(cat "$tmp_body")
+            rm -f "$tmp_body"
+
+            if [[ "$http_code" == "200" ]]; then
                 ok "$svc is up  ($url)"
                 svc_ok=true
                 break
+            elif [[ "$http_code" != "000" && "$svc" == "server" ]]; then
+                # Server responded but maybe with 503/207
+                if echo "$response" | grep -q '"services":'; then
+                    warn "$svc responded but reports UNHEALTHY sub-services"
+                    for sub in Server MongoDB Redis MinIO; do
+                        local sub_line=$(echo "$response" | grep -o "\"service\":\"$sub\",\"status\":\"[^\"]*\"" || true)
+                        if [[ -n "$sub_line" ]]; then
+                            local sub_status=$(echo "$sub_line" | sed 's/.*"status":"\([^"]*\)".*/\1/')
+                            if [[ "$sub_status" == "healthy" ]]; then
+                                echo -e "      ${GREEN}•${NC} $sub: $sub_status"
+                            else
+                                echo -e "      ${RED}•${NC} $sub: $sub_status"
+                            fi
+                        fi
+                    done
+                    all_ok=false
+                    break
+                fi
             fi
             sleep "$interval"
             elapsed=$(( elapsed + interval ))
