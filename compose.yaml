@@ -87,6 +87,8 @@ services:
     restart: unless-stopped
     ports:
       - "${SERVER_PORT:-3000}:3000"
+    environment:
+      NODE_OPTIONS: "--max-http-header-size=65536"
     env_file:
       - ${DEPLOY_ENV_FILE:-.env.local}
     volumes:
