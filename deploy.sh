@@ -509,6 +509,11 @@ cmd_seed() {
     ok "Seed complete"
 }
 
+# Non-destructively upsert report definitions used by the reporting dashboard.
+cmd_seed_reports() {
+    cmd_seed --upsert --only=reports
+}
+
 # =============================================================================
 # Entrypoint
 # =============================================================================
@@ -532,9 +537,10 @@ case "$COMMAND" in
     status)     cmd_status             ;;
     health)     cmd_health             ;;
     seed)       cmd_seed      "$@"     ;;
+    seed-reports) cmd_seed_reports     ;;
     *)
         echo ""
-        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health}"
+        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|seed|seed-reports}"
         echo ""
         echo "  deploy    Pull images then start all services (default)"
         echo "  pull      Pull latest images from GHCR only"
@@ -553,6 +559,7 @@ case "$COMMAND" in
         echo "  health    Validate service HTTP endpoints"
         echo "  seed      Run database seed inside the server container"
         echo "             (e.g. ./deploy.sh seed --upsert --only=users,products)"
+        echo "  seed-reports  Upsert report definitions only"
         echo ""
         exit 1
         ;;
