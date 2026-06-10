@@ -200,8 +200,9 @@ cmd_safe_deploy() {
     docker run -d \
         --name homswag-canary-reporting \
         --network homswag-net \
-        -p "${canary_reporting_port}:3003" \
+        -p "${canary_reporting_port}:3000" \
         --env-file "$ENV_FILE" \
+        -e PORT=3000 \
         -e REPORTING_REQUEST_TOPIC=homswag.reporting.canary.requests \
         -e REPORTING_EVENT_TOPIC=homswag.reporting.canary.events \
         -e REPORTING_DEAD_LETTER_TOPIC=homswag.reporting.canary.dead-letter \
