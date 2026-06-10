@@ -94,6 +94,7 @@ COMPOSE="$COMPOSE_BIN --env-file $ENV_FILE -f compose.yaml"
 SERVER_PORT="${SERVER_PORT:-3000}"
 ADMIN_PORT="${ADMIN_PORT:-3001}"
 APP_PORT="${APP_PORT:-3002}"
+REPORTING_PORT="${REPORTING_PORT:-3003}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9001}"
 
 # =============================================================================
@@ -117,6 +118,7 @@ cmd_up() {
     $COMPOSE ps
     echo ""
     echo -e "  ${BOLD}Server${NC}   -> http://localhost:${SERVER_PORT}"
+    echo -e "  ${BOLD}Reporting${NC}-> http://localhost:${REPORTING_PORT}"
     echo -e "  ${BOLD}Admin${NC}    -> http://localhost:${ADMIN_PORT}"
     echo -e "  ${BOLD}App${NC}      -> http://localhost:${APP_PORT}"
     echo -e "  ${BOLD}MinIO${NC}    -> http://localhost:${MINIO_CONSOLE_PORT}  (console)"
@@ -136,17 +138,19 @@ cmd_up() {
 # ---------------------------------------------------------------------------
 cmd_safe_deploy() {
     local canary_server_port=$(( SERVER_PORT + 100 ))
+    local canary_reporting_port=$(( REPORTING_PORT + 100 ))
     local canary_admin_port=$(( ADMIN_PORT  + 100 ))
     local canary_app_port=$(( APP_PORT    + 100 ))
 
     local server_img="ghcr.io/jeraldvictor/hom-swag-server:${SERVER_IMAGE_TAG:-latest}"
+    local reporting_img="ghcr.io/jeraldvictor/hom-swag-reporting:${REPORTING_IMAGE_TAG:-latest}"
     local admin_img="ghcr.io/jeraldvictor/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}"
     local app_img="ghcr.io/jeraldvictor/hom-swag-app:${APP_IMAGE_TAG:-latest}"
 
     # Ensure canary containers are removed on exit/interrupt in all cases
     cleanup_canary() {
         log "Cleaning up canary containers ..."
-        docker rm -f homswag-canary-server homswag-canary-admin homswag-canary-app 2>/dev/null || true
+        docker rm -f homswag-canary-server homswag-canary-reporting homswag-canary-admin homswag-canary-app 2>/dev/null || true
     }
     trap cleanup_canary EXIT INT TERM
 
@@ -176,12 +180,12 @@ cmd_safe_deploy() {
     [[ "$log_src"    = /* ]] || log_src="${SCRIPT_DIR}/${log_src}"
 
     # Remove any leftover canary containers from a previous failed run
-    docker rm -f homswag-canary-server homswag-canary-admin homswag-canary-app 2>/dev/null || true
+    docker rm -f homswag-canary-server homswag-canary-reporting homswag-canary-admin homswag-canary-app 2>/dev/null || true
 
     # ── 2c. Start canary containers ───────────────────────────────────────────
     echo ""
     echo -e "${BOLD}━━━  Launching canary containers  ━━━${NC}"
-    log "Canary ports → server:${canary_server_port}  admin:${canary_admin_port}  app:${canary_app_port}"
+    log "Canary ports → server:${canary_server_port}  reporting:${canary_reporting_port}  admin:${canary_admin_port}  app:${canary_app_port}"
 
     docker run -d \
         --name homswag-canary-server \
@@ -192,6 +196,17 @@ cmd_safe_deploy() {
         -v "${upload_src}:/app/uploads" \
         -v "${log_src}:/app/logs" \
         "$server_img" || die "Failed to start canary server"
+
+    docker run -d \
+        --name homswag-canary-reporting \
+        --network homswag-net \
+        -p "${canary_reporting_port}:3003" \
+        --env-file "$ENV_FILE" \
+        -e REPORTING_REQUEST_TOPIC=homswag.reporting.canary.requests \
+        -e REPORTING_EVENT_TOPIC=homswag.reporting.canary.events \
+        -e REPORTING_DEAD_LETTER_TOPIC=homswag.reporting.canary.dead-letter \
+        -e REPORTING_CONSUMER_GROUP=homswag-reporting-canary-workers \
+        "$reporting_img" || die "Failed to start canary reporting"
 
     docker run -d \
         --name homswag-canary-admin \
@@ -216,11 +231,11 @@ cmd_safe_deploy() {
     local interval=5
     local canary_ok=true
 
-    local svcs=("server"                                         "admin"                              "app")
-    local urls=("http://localhost:${canary_server_port}/health"  "http://localhost:${canary_admin_port}"  "http://localhost:${canary_app_port}")
+    local svcs=("server"                                         "reporting"                              "admin"                              "app")
+    local urls=("http://localhost:${canary_server_port}/health"  "http://localhost:${canary_reporting_port}/health"  "http://localhost:${canary_admin_port}"  "http://localhost:${canary_app_port}")
 
     local i
-    for i in 0 1 2; do
+    for i in 0 1 2 3; do
         local svc="${svcs[$i]}"
         local url="${urls[$i]}"
         local svc_ok=false
@@ -286,8 +301,8 @@ cmd_safe_deploy() {
     cleanup_canary
     trap - EXIT INT TERM
 
-    # Force-recreate only the 3 app services (infra is untouched)
-    $COMPOSE up -d --force-recreate server admin app
+    # Force-recreate only app services (infra is untouched)
+    $COMPOSE up -d --force-recreate server reporting admin app
 
     # Final production health check (if this fails the script exits non-zero)
     cmd_health
@@ -327,8 +342,8 @@ cmd_health() {
     local all_ok=true
 
     # Parallel arrays — avoids associative arrays (bash 3.2 on macOS)
-    local svcs=("server"                                  "admin"                       "app")
-    local urls=("http://localhost:${SERVER_PORT}/health"  "http://localhost:${ADMIN_PORT}"  "http://localhost:${APP_PORT}")
+    local svcs=("server"                                  "reporting"                       "admin"                       "app")
+    local urls=("http://localhost:${SERVER_PORT}/health"  "http://localhost:${REPORTING_PORT}/health"  "http://localhost:${ADMIN_PORT}"  "http://localhost:${APP_PORT}")
 
     if [[ "${MINIO_ENABLED:-false}" == "true" ]]; then
         svcs+=("minio")
