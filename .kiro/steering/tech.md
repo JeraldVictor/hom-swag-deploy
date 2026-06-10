@@ -8,6 +8,7 @@
   - `mongo:8` (Infrastructure)
   - `redis:7-alpine` (Infrastructure)
   - `minio/minio:latest` (Infrastructure)
+  - `apache/kafka:latest` (Infrastructure)
   - `ghcr.io/jeraldvictor/hom-swag-*` (Application images)
 
 ## Deployment Scripting
@@ -23,9 +24,12 @@
   - `3000`: Server API
   - `3001`: Admin Dashboard
   - `3002`: User App
+  - `3003`: Reporting service
   - `27017`: MongoDB (optional)
+  - `9094`: Kafka external listener (optional)
   - `9000/9001`: MinIO API/Console
 - **JWT**: Token-based authentication for Server and BFF.
+- **Kafka**: Internal broker advertised as `kafka:9092`; external local access defaults to `127.0.0.1:9094`.
 - **SSL/TLS**: Handled externally (e.g., Nginx reverse proxy) or via `MINIO_USE_SSL`.
 
 ## Infrastructure Versions
@@ -33,6 +37,7 @@
 - **MongoDB**: 8.0
 - **Redis**: 7.x
 - **MinIO**: S3 API Compatible
+- **Kafka**: Apache Kafka latest image
 
 ## Environment Variables
 
