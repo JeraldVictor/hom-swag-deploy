@@ -30,6 +30,26 @@ services:
     networks:
       - homswag-net
 
+  mongo-express:
+    image: mongo-express:latest
+    container_name: homswag-mongo-express
+    restart: unless-stopped
+    ports:
+      - "${MONGO_EXPRESS_PORT:-8081}:8081"
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    environment:
+      ME_CONFIG_MONGODB_SERVER: mongodb
+      ME_CONFIG_MONGODB_PORT: 27017
+      ME_CONFIG_MONGODB_ENABLE_ADMIN: true
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USER:-admin}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD:-changeme}
+      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_BASICAUTH_USERNAME:-admin}
+      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_BASICAUTH_PASSWORD:-changeme}
+    networks:
+      - homswag-net
+
   redis:
     image: docker.io/redis:7-alpine
     container_name: homswag-redis

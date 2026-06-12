@@ -157,6 +157,12 @@ openssl rand -hex 32
 - Redis: `6379`
 - MinIO API: `9000`
 - MinIO Console: `9001`
+- Mongo Express: `8081`
+
+Mongo Express also supports optional basic auth env vars:
+
+- `MONGO_EXPRESS_BASICAUTH_USERNAME` (default: `admin`)
+- `MONGO_EXPRESS_BASICAUTH_PASSWORD` (default: `changeme`)
 
 ---
 

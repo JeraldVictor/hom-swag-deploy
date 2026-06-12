@@ -42,21 +42,57 @@ die()  { echo -e "${RED}[$(date '+%H:%M:%S')] \u2718${NC}  $*" >&2; exit 1; }
 
 # ── Parse global flags ─────────────────────────────────────────────────────────
 ENV_PROFILE="${DEPLOY_ENV:-local}"
+COMMAND=""
+REMAINING_ARGS=()
+UNKNOWN_ARGS=()
 
-while [[ "$#" -gt 0 ]]; do
+is_command() {
     case "$1" in
+        deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|seed|seed-reports)
+            return 0 ;;
+        *)
+            return 1 ;;
+    esac
+}
+
+ARGS=("$@")
+for ((i = 0; i < ${#ARGS[@]}; i++)); do
+    arg="${ARGS[$i]}"
+    case "$arg" in
         -e|--env)
-            [[ "$#" -ge 2 ]] || die "Missing value for --env (expected: local|prod)"
-            ENV_PROFILE="$2"
-            shift 2
+            next_index=$((i + 1))
+            [[ "$next_index" -lt "${#ARGS[@]}" ]] || die "Missing value for --env (expected: local|prod)"
+            ENV_PROFILE="${ARGS[$next_index]}"
+            i=$next_index
             ;;
         prod|production|local)
-            ENV_PROFILE="$1"
-            shift
+            if [[ -z "$COMMAND" ]]; then
+                ENV_PROFILE="$arg"
+            else
+                REMAINING_ARGS+=("$arg")
+            fi
             ;;
-        *) break ;;
+        *)
+            if [[ -z "$COMMAND" ]] && is_command "$arg"; then
+                COMMAND="$arg"
+            elif [[ -z "$COMMAND" ]]; then
+                UNKNOWN_ARGS+=("$arg")
+            else
+                REMAINING_ARGS+=("$arg")
+            fi
+            ;;
     esac
 done
+
+if [[ "${#UNKNOWN_ARGS[@]}" -gt 0 && -z "$COMMAND" ]]; then
+    die "Unknown command '${UNKNOWN_ARGS[0]}'. Use: ${0} [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|seed|seed-reports}"
+fi
+
+if [[ -z "$COMMAND" ]]; then
+    COMMAND="deploy"
+fi
+
+set -- "${REMAINING_ARGS[@]}"
 
 case "$ENV_PROFILE" in
     local)           ENV_FILE=".env.local" ;;
@@ -96,6 +132,7 @@ ADMIN_PORT="${ADMIN_PORT:-3001}"
 APP_PORT="${APP_PORT:-3002}"
 REPORTING_PORT="${REPORTING_PORT:-3003}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9001}"
+MONGO_EXPRESS_PORT="${MONGO_EXPRESS_PORT:-8081}"
 
 # =============================================================================
 # Sub-commands
@@ -122,6 +159,7 @@ cmd_up() {
     echo -e "  ${BOLD}Admin${NC}    -> http://localhost:${ADMIN_PORT}"
     echo -e "  ${BOLD}App${NC}      -> http://localhost:${APP_PORT}"
     echo -e "  ${BOLD}MinIO${NC}    -> http://localhost:${MINIO_CONSOLE_PORT}  (console)"
+    echo -e "  ${BOLD}Mongo Express${NC} -> http://localhost:${MONGO_EXPRESS_PORT} (admin)"
     echo ""
 }
 
@@ -518,8 +556,6 @@ cmd_seed_reports() {
 # =============================================================================
 # Entrypoint
 # =============================================================================
-COMMAND="${1:-deploy}"
-shift || true
 
 case "$COMMAND" in
     deploy|"")  cmd_deploy             ;;
