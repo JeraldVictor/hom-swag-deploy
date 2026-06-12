@@ -559,7 +559,7 @@ case "$COMMAND" in
         echo "  status    Show running containers"
         echo "  health    Validate service HTTP endpoints"
         echo "  seed      Run database seed inside the server container"
-        echo "             (e.g. ./deploy.sh seed --upsert --only=users,products)"
+        echo "             (e.g. ./deploy.sh seed --upsert --only=locations,offices,menu,products)"
         echo "  seed-reports  Upsert report definitions only"
         echo ""
         exit 1
