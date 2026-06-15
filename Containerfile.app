@@ -9,22 +9,22 @@ RUN corepack enable && corepack prepare pnpm@latest --activate
 
 # Install dependencies (cache layer)
 COPY repos/app/package.json repos/app/pnpm-lock.yaml ./
-RUN pnpm install --no-frozen-lockfile
+RUN printf 'onlyBuiltDependencies:\n  - esbuild\n  - simple-git-hooks\n' > pnpm-workspace.yaml
+RUN printf 'auto-install-peers=true\nonly-built-dependencies[]=esbuild\nonly-built-dependencies[]=simple-git-hooks\n' > .npmrc
+RUN pnpm install --no-frozen-lockfile --ignore-scripts \
+    && pnpm rebuild esbuild
 
-# Build-time env vars (available to Vite/TanStack build)
-ARG VITE_API_BASE_URL=http://localhost:3000
-ARG VITE_AUTH_API_BASE_URL=http://localhost:3000
-ARG VITE_MEDIA_BASE_URL=http://localhost:3000
-
-ENV VITE_API_BASE_URL=$VITE_API_BASE_URL \
-    VITE_AUTH_API_BASE_URL=$VITE_AUTH_API_BASE_URL \
-    VITE_MEDIA_BASE_URL=$VITE_MEDIA_BASE_URL \
-    PUBLIC_API_BASE_URL=$VITE_API_BASE_URL \
-    MEDIA_BASE_URL=$VITE_MEDIA_BASE_URL
+# Build-time URLs (available to Vite/TanStack build)
+ARG HS_API_URL=http://localhost:3000
+ARG HS_LOGIN_URL=http://localhost:3000
+ARG HS_MEDIA_URL=http://localhost:3000
 
 # Copy source and build
 COPY repos/app/ .
-RUN pnpm build
+RUN printf 'VITE_API_BASE_URL=%s\nVITE_AUTH_API_BASE_URL=%s\nVITE_MEDIA_BASE_URL=%s\nPUBLIC_API_BASE_URL=%s\nMEDIA_BASE_URL=%s\n' \
+        "$HS_API_URL" "$HS_LOGIN_URL" "$HS_MEDIA_URL" "$HS_API_URL" "$HS_MEDIA_URL" > .env.production \
+    && pnpm build \
+    && rm -f .env.production
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner

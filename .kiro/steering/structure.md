@@ -4,6 +4,7 @@
 deploy/
 ├── compose.yaml          # Main Docker Compose file defining all services
 ├── deploy.sh             # Orchestration script (pull, up, health, safe-deploy, refresh, logs, shell)
+├── build-images.sh       # Builds app images and optionally pushes them to the registry
 ├── .env.example          # Template for environment variables
 ├── .env.local            # Local development environment configuration
 ├── .env.prod             # Production environment configuration
@@ -32,7 +33,7 @@ deploy/
 
 - **`compose.yaml`**: Uses `${VAR:-default}` syntax to allow overrides from `.env` files. Defines the `homswag-net` network for inter-service communication.
 - **`deploy.sh`**:
-  - `cmd_pull`: Updates images from GHCR.
+  - `cmd_pull`: Updates images from the configured registry.
   - `cmd_up`: Starts the stack.
   - `cmd_safe_deploy`: Orchestrates zero-downtime swaps using canary containers.
   - `cmd_health`: Validates `/health` endpoints for Server and connectivity for infra/app services.

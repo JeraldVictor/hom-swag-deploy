@@ -9,7 +9,8 @@
   - `redis:7-alpine` (Infrastructure)
   - `minio/minio:latest` (Infrastructure)
   - `apache/kafka:latest` (Infrastructure)
-  - `ghcr.io/jeraldvictor/hom-swag-*` (Application images)
+  - `docker.io/jeraldvictor/hom-swag-*` (Application images pulled by deploy)
+  - `registry.digitalocean.com/homswag-repo/hom-swag-*` (Optional push target from `build-images.sh --push`)
 
 ## Deployment Scripting
 

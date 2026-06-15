@@ -16,7 +16,7 @@ The `deploy` workspace provides a unified environment for running the entire Hom
 
 ## Deployment Strategy
 
-- **Image-Based**: Services are deployed using pre-built images pulled from GHCR (GitHub Container Registry). This ensures consistency between environments and avoids build-time issues on the deployment host.
+- **Image-Based**: Services are deployed using pre-built images pulled from Docker Hub by default. Release builds can also be pushed to DigitalOcean Container Registry with `build-images.sh --push`.
 - **Zero-Downtime (Prod)**: The `prod` profile uses a "canary" strategy where new containers are started and health-checked on temporary ports before swapping with the live containers.
 - **Infrastructure**: Shared MongoDB, Redis, MinIO, and Kafka instances managed as part of the compose stack.
 - **Reverse Proxy**: Typically sits in front of the stack (e.g., Nginx) to handle TLS and routing to the specific ports (`3000`, `3001`, `3002`, and reporting on `3003` when exposed).

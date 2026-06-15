@@ -6,15 +6,14 @@ WORKDIR /app
 # Install build dependencies
 RUN apk add --no-cache git
 
-# Copy go.mod and go.sum (if it exists)
-COPY reporting/go.mod ./
-# COPY reporting/go.sum ./
+# Copy module files
+COPY repos/reporting/go.mod repos/reporting/go.sum ./
 
 # Download dependencies
 RUN go mod download
 
 # Copy source
-COPY reporting/ .
+COPY repos/reporting/ .
 
 # Build the application
 RUN CGO_ENABLED=0 GOOS=linux go build -o reporting ./cmd/reporting/main.go

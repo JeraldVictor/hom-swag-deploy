@@ -3,7 +3,7 @@
 # HomSwag — Deploy script (image-based — no git pull, no local build)
 #
 # Usage:
-#   ./deploy.sh                      # pull images from GHCR + start all services
+#   ./deploy.sh                      # pull images from registry + start all services
 #   ./deploy.sh prod                 # use .env.prod and deploy (shorthand for --env prod)
 #   ./deploy.sh --env prod           # same as above (explicit flag form)
 #   ./deploy.sh prod logs [svc...]   # any sub-command can be prefixed with prod|local
@@ -140,7 +140,7 @@ MONGO_EXPRESS_PORT="${MONGO_EXPRESS_PORT:-8081}"
 
 cmd_pull() {
     echo ""
-    echo -e "${BOLD}━━━  Pulling images from GHCR  ━━━${NC}"
+    echo -e "${BOLD}━━━  Pulling images from registry  ━━━${NC}"
     log "Using env file: $ENV_FILE"
     $COMPOSE pull
     ok "All images up-to-date"
@@ -180,10 +180,12 @@ cmd_safe_deploy() {
     local canary_admin_port=$(( ADMIN_PORT  + 100 ))
     local canary_app_port=$(( APP_PORT    + 100 ))
 
-    local server_img="ghcr.io/jeraldvictor/hom-swag-server:${SERVER_IMAGE_TAG:-latest}"
-    local reporting_img="ghcr.io/jeraldvictor/hom-swag-reporting:${REPORTING_IMAGE_TAG:-latest}"
-    local admin_img="ghcr.io/jeraldvictor/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}"
-    local app_img="ghcr.io/jeraldvictor/hom-swag-app:${APP_IMAGE_TAG:-latest}"
+    local registry="${IMAGE_REGISTRY:-docker.io/jeraldvictor}"
+    registry="${registry%/}"
+    local server_img="${registry}/hom-swag-server:${SERVER_IMAGE_TAG:-latest}"
+    local reporting_img="${registry}/hom-swag-reporting:${REPORTING_IMAGE_TAG:-latest}"
+    local admin_img="${registry}/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}"
+    local app_img="${registry}/hom-swag-app:${APP_IMAGE_TAG:-latest}"
 
     # Ensure canary containers are removed on exit/interrupt in all cases
     cleanup_canary() {
@@ -580,7 +582,7 @@ case "$COMMAND" in
         echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|seed|seed-reports}"
         echo ""
         echo "  deploy    Pull images then start all services (default)"
-        echo "  pull      Pull latest images from GHCR only"
+        echo "  pull      Pull latest images from the configured registry only"
         echo "  up        Start services without pulling images"
         echo "  restart   Restart containers          (e.g. ./deploy.sh restart server)"
         echo "  recreate  Force-recreate containers   (e.g. ./deploy.sh recreate server)"

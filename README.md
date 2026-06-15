@@ -4,9 +4,11 @@ Deployment workspace for running the full HomSwag stack with Podman/Docker Compo
 
 ## What this folder does
 
-- Pulls/clones app repositories into `repos/`
-- Builds images for `server`, `admin`, and `app`
-- Starts infrastructure (`mongodb`, `redis`, `minio`) and application containers
+- Uses app sources from `repos/` when present, or from the sibling workspace folders
+- Builds images for `server`, `reporting`, `admin`, `app`, and `kafka`
+- Pulls/deploys application images from Docker Hub by default
+- Pushes release images to `registry.digitalocean.com/homswag-repo` only when requested
+- Starts infrastructure (`mongodb`, `redis`, `minio`, `kafka`) and application containers
 - Supports environment profiles (`local`, `prod`)
 - Supports deploying only selected services
 
@@ -18,6 +20,7 @@ Deployment workspace for running the full HomSwag stack with Podman/Docker Compo
 - `git`
 - Access to these repositories:
   - `REPO_SERVER`
+  - `REPO_REPORTING`
   - `REPO_ADMIN`
   - `REPO_APP`
 
@@ -79,10 +82,46 @@ Current defaults:
 
 ## Commands
 
+### Build and push release images
+
+Build images locally:
+
 ```bash
-./deploy.sh [--env local|prod] [--remote] [--no-cache] \
-            [deploy|pull|build|up|restart|logs|status|down] \
-            [server|admin|app|all]
+./build-images.sh --env prod
+```
+
+Build and push to DigitalOcean Container Registry:
+
+```bash
+./build-images.sh --env prod --push
+```
+
+Build selected services:
+
+```bash
+./build-images.sh --env prod server reporting --push
+./build-images.sh --env prod --tag 2026.06.15 --push
+```
+
+The build script defaults to these registries:
+
+```bash
+IMAGE_REGISTRY=docker.io/jeraldvictor
+PUSH_REGISTRY=registry.digitalocean.com/homswag-repo
+KAFKA_IMAGE_TAG=latest
+KAFKA_SOURCE_IMAGE=apache/kafka:latest
+```
+
+Override the build/deploy pull source with `IMAGE_REGISTRY`.
+Override the push target with `PUSH_REGISTRY` or `./build-images.sh --push-registry ...`.
+Kafka is pulled from `KAFKA_SOURCE_IMAGE`, then tagged as
+`IMAGE_REGISTRY/hom-swag-kafka:KAFKA_IMAGE_TAG`.
+
+### Deploy existing images
+
+```bash
+./deploy.sh [--env local|prod] \
+            [deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|seed|seed-reports]
 ```
 
 ### Full deploy
@@ -106,7 +145,7 @@ will ignore them when determining which services to act on.
 
 ```bash
 ./deploy.sh --env local pull
-./deploy.sh --env local build           # add --no-cache to force a clean build
+./build-images.sh --env local           # add --no-cache to force a clean build
 ./deploy.sh --env local up
 ```
 
@@ -114,9 +153,44 @@ will ignore them when determining which services to act on.
 
 ```bash
 ./deploy.sh --env prod pull server
-./deploy.sh --env prod build server
+./build-images.sh --env prod server --push
 ./deploy.sh --env prod up server
 ```
+
+### Kafka container
+
+Kafka is included in the default build command:
+
+```bash
+./build-images.sh --env prod
+./build-images.sh --env prod --push
+```
+
+You can also build only Kafka:
+
+```bash
+./build-images.sh --env prod kafka
+./build-images.sh --env prod kafka --push
+```
+
+Then pull or refresh it during deploy:
+
+```bash
+./deploy.sh --env prod pull kafka
+./deploy.sh --env prod up kafka
+./deploy.sh --env prod refresh kafka
+```
+
+When `server`, `reporting`, and `kafka` share the compose network, keep:
+
+```bash
+KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+KAFKA_BROKERS=kafka:9092
+KAFKA_INTERNAL_HOST=kafka
+```
+
+If Kafka is deployed as a separately managed service, set `KAFKA_BOOTSTRAP_SERVERS`
+and `KAFKA_BROKERS` to that service DNS name.
 
 ### Operations
 
@@ -157,6 +231,7 @@ openssl rand -hex 32
 - Redis: `6379`
 - MinIO API: `9000`
 - MinIO Console: `9001`
+- Kafka external listener: `9094`
 - Mongo Express: `8081`
 
 Mongo Express also supports optional basic auth env vars:

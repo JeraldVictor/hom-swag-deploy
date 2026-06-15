@@ -1,5 +1,5 @@
 # HomSwag — Docker/Podman Compose
-# Images pulled from GHCR — no local build required
+# Application images are pulled from Docker Hub — no local build required
 # Ports: server ${SERVER_PORT:-3000} | admin ${ADMIN_PORT:-3001} | app ${APP_PORT:-3002}
 
 services:
@@ -97,11 +97,11 @@ services:
       - homswag-net
 
   # ────────────────────────────────────────────────────────────────
-  # Applications (pre-built images — pulled from GHCR)
+  # Applications (pre-built images — pulled from Docker Hub)
   # ────────────────────────────────────────────────────────────────
 
   server:
-    image: ghcr.io/jeraldvictor/hom-swag-server:${SERVER_IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-docker.io/jeraldvictor}/hom-swag-server:${SERVER_IMAGE_TAG:-latest}
     pull_policy: always
     container_name: homswag-server
     restart: unless-stopped
@@ -133,7 +133,7 @@ services:
       - homswag-net
 
   reporting:
-    image: ghcr.io/jeraldvictor/hom-swag-reporting:${REPORTING_IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-docker.io/jeraldvictor}/hom-swag-reporting:${REPORTING_IMAGE_TAG:-latest}
     pull_policy: always
     container_name: homswag-reporting
     restart: unless-stopped
@@ -162,7 +162,7 @@ services:
       - homswag-net
 
   kafka:
-    image: apache/kafka:latest
+    image: ${IMAGE_REGISTRY:-docker.io/jeraldvictor}/hom-swag-kafka:${KAFKA_IMAGE_TAG:-latest}
     container_name: homswag-kafka
     restart: unless-stopped
     ports:
@@ -171,8 +171,8 @@ services:
       - KAFKA_NODE_ID=1
       - KAFKA_PROCESS_ROLES=broker,controller
       - KAFKA_LISTENERS=PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
-      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://127.0.0.1:9094
-      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@kafka:9093
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://${KAFKA_INTERNAL_HOST:-kafka}:9092,EXTERNAL://${KAFKA_EXTERNAL_HOST:-127.0.0.1}:${KAFKA_PORT:-9094}
+      - KAFKA_CONTROLLER_QUORUM_VOTERS=1@${KAFKA_INTERNAL_HOST:-kafka}:9093
       - KAFKA_CONTROLLER_LISTENER_NAMES=CONTROLLER
       - KAFKA_LISTENER_SECURITY_PROTOCOL_MAP=CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
       - KAFKA_INTER_BROKER_LISTENER_NAME=PLAINTEXT
@@ -188,7 +188,7 @@ services:
       - homswag-net
 
   admin:
-    image: ghcr.io/jeraldvictor/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-docker.io/jeraldvictor}/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}
     pull_policy: always
     container_name: homswag-admin
     restart: unless-stopped
@@ -198,7 +198,7 @@ services:
       - homswag-net
 
   app:
-    image: ghcr.io/jeraldvictor/hom-swag-app:${APP_IMAGE_TAG:-latest}
+    image: ${IMAGE_REGISTRY:-docker.io/jeraldvictor}/hom-swag-app:${APP_IMAGE_TAG:-latest}
     pull_policy: always
     container_name: homswag-app
     restart: unless-stopped
