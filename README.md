@@ -105,6 +105,10 @@ Current defaults:
   - `nginx/certs/reporting.alpha.homswag.com/fullchain.pem`
   - `nginx/certs/reporting.alpha.homswag.com/privkey.pem`
 
+If a cert is missing, `deploy.sh` creates a temporary 7-day self-signed cert so
+nginx can start. Replace those files with real certificates before serving
+production traffic.
+
 ---
 
 ## Commands

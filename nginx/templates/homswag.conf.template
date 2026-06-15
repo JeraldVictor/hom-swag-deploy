@@ -35,7 +35,8 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name ${API_DOMAIN};
 
     ssl_certificate /etc/nginx/certs/${API_DOMAIN}/fullchain.pem;
@@ -59,7 +60,8 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name ${REPORTING_DOMAIN};
 
     ssl_certificate /etc/nginx/certs/${REPORTING_DOMAIN}/fullchain.pem;
@@ -81,7 +83,8 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name ${ADMIN_DOMAIN};
 
     ssl_certificate /etc/nginx/certs/${ADMIN_DOMAIN}/fullchain.pem;
@@ -101,7 +104,8 @@ server {
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
     server_name ${APP_DOMAIN};
 
     ssl_certificate /etc/nginx/certs/${APP_DOMAIN}/fullchain.pem;

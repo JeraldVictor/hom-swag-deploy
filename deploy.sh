@@ -174,6 +174,30 @@ ensure_registry_auth() {
     fi
 }
 
+ensure_nginx_certs() {
+    local certs_path="${NGINX_CERTS_PATH:-./nginx/certs}"
+    [[ "$certs_path" = /* ]] || certs_path="${SCRIPT_DIR}/${certs_path}"
+
+    local domain
+    for domain in "$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN"; do
+        local cert_dir="${certs_path}/${domain}"
+        local cert_file="${cert_dir}/fullchain.pem"
+        local key_file="${cert_dir}/privkey.pem"
+
+        if [[ -s "$cert_file" && -s "$key_file" ]]; then
+            continue
+        fi
+
+        warn "Missing TLS certificate for ${domain}; creating temporary self-signed cert"
+        mkdir -p "$cert_dir"
+        openssl req -x509 -nodes -newkey rsa:2048 -days 7 \
+            -subj "/CN=${domain}" \
+            -addext "subjectAltName=DNS:${domain}" \
+            -keyout "$key_file" \
+            -out "$cert_file" >/dev/null 2>&1 || die "Failed to create temporary TLS certificate for ${domain}"
+    done
+}
+
 cmd_pull() {
     echo ""
     echo -e "${BOLD}━━━  Pulling images from registry  ━━━${NC}"
@@ -191,6 +215,7 @@ cmd_pull() {
 cmd_up() {
     echo ""
     echo -e "${BOLD}━━━  Starting services  ━━━${NC}"
+    ensure_nginx_certs
     $COMPOSE up -d --remove-orphans \
         --scale server="$SERVER_REPLICAS" \
         --scale reporting="$REPORTING_REPLICAS" \
@@ -453,6 +478,7 @@ cmd_restart() {
 # Force-recreate one or all services without pulling new images
 cmd_recreate() {
     local svcs=("$@")
+    ensure_nginx_certs
     if [[ "${#svcs[@]}" -gt 0 ]]; then
         log "Force-recreating service(s): ${svcs[*]} ..."
     else
@@ -466,6 +492,7 @@ cmd_recreate() {
 # Pull latest image(s) then force-recreate — scoped to one or all services
 cmd_refresh() {
     local svcs=("$@")
+    ensure_nginx_certs
     if [[ "${#svcs[@]}" -gt 0 ]]; then
         log "Refreshing service(s): ${svcs[*]} ..."
         $COMPOSE pull "${svcs[@]}"
