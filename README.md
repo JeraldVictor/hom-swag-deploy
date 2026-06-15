@@ -74,6 +74,7 @@ storage through `.env.prod`:
 - `MINIO_ACCESS_KEY`
 - `MINIO_SECRET_KEY`
 - `MINIO_USE_SSL`
+- `KAFKA_BOOTSTRAP_SERVERS`
 
 The deploy health command validates those external services through the server
 `/health` endpoint. It does not probe local MongoDB, Redis, or MinIO containers

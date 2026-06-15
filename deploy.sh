@@ -278,7 +278,7 @@ print_server_health_response() {
     local response="$1"
     warn "server responded but reports UNHEALTHY sub-services"
     local sub
-    for sub in Server MongoDB Redis MinIO; do
+    for sub in Server MongoDB Redis MinIO Kafka; do
         local sub_line
         local sub_error
         sub_line=$(echo "$response" | grep -o "\"service\":\"$sub\",\"status\":\"[^\"]*\"" || true)
