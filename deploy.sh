@@ -21,6 +21,7 @@
 #   ./deploy.sh shell <svc>          # open interactive terminal in container
 #   ./deploy.sh status               # show running containers
 #   ./deploy.sh health               # validate service HTTP endpoints
+#   ./deploy.sh certs                # issue/renew trusted Let's Encrypt TLS certs
 # =============================================================================
 set -euo pipefail
 
@@ -48,7 +49,7 @@ UNKNOWN_ARGS=()
 
 is_command() {
     case "$1" in
-        deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|seed|seed-reports)
+        deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|certs|seed|seed-reports)
             return 0 ;;
         *)
             return 1 ;;
@@ -85,7 +86,7 @@ for ((i = 0; i < ${#ARGS[@]}; i++)); do
 done
 
 if [[ "${#UNKNOWN_ARGS[@]}" -gt 0 && -z "$COMMAND" ]]; then
-    die "Unknown command '${UNKNOWN_ARGS[0]}'. Use: ${0} [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|seed|seed-reports}"
+    die "Unknown command '${UNKNOWN_ARGS[0]}'. Use: ${0} [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|certs|seed|seed-reports}"
 fi
 
 if [[ -z "$COMMAND" ]]; then
@@ -135,8 +136,6 @@ SERVER_PORT="${SERVER_PORT:-3000}"
 ADMIN_PORT="${ADMIN_PORT:-3001}"
 APP_PORT="${APP_PORT:-3002}"
 REPORTING_PORT="${REPORTING_PORT:-3003}"
-MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9001}"
-MONGO_EXPRESS_PORT="${MONGO_EXPRESS_PORT:-8081}"
 NGINX_HTTP_PORT="${NGINX_HTTP_PORT:-80}"
 NGINX_HTTPS_PORT="${NGINX_HTTPS_PORT:-443}"
 APP_DOMAIN="${APP_DOMAIN:-alpha.homswag.com}"
@@ -198,6 +197,57 @@ ensure_nginx_certs() {
     done
 }
 
+copy_letsencrypt_cert() {
+    local domain="$1"
+    local certs_path="${NGINX_CERTS_PATH:-./nginx/certs}"
+    [[ "$certs_path" = /* ]] || certs_path="${SCRIPT_DIR}/${certs_path}"
+
+    local source_dir="${SCRIPT_DIR}/nginx/letsencrypt/live/${domain}"
+    local target_dir="${certs_path}/${domain}"
+
+    [[ -s "${source_dir}/fullchain.pem" && -s "${source_dir}/privkey.pem" ]] || \
+        die "Let's Encrypt did not create expected cert files for ${domain}"
+
+    mkdir -p "$target_dir"
+    cp -L "${source_dir}/fullchain.pem" "${target_dir}/fullchain.pem"
+    cp -L "${source_dir}/privkey.pem" "${target_dir}/privkey.pem"
+}
+
+cmd_certs() {
+    echo ""
+    echo -e "${BOLD}━━━  Issuing trusted TLS certificates  ━━━${NC}"
+
+    [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]] || \
+        warn "Issuing public Let's Encrypt certs for non-prod profile '${ENV_PROFILE}'"
+
+    local email="${LETSENCRYPT_EMAIL:-}"
+    [[ -n "$email" ]] || die "Set LETSENCRYPT_EMAIL in ${ENV_FILE} before issuing certificates."
+
+    mkdir -p "${SCRIPT_DIR}/nginx/certbot" "${SCRIPT_DIR}/nginx/letsencrypt"
+    ensure_nginx_certs
+
+    log "Starting nginx so Let's Encrypt can reach HTTP-01 challenge paths ..."
+    $COMPOSE up -d nginx
+
+    local domains=("$APP_DOMAIN" "$ADMIN_DOMAIN" "$API_DOMAIN" "$REPORTING_DOMAIN")
+    local domain
+    for domain in "${domains[@]}"; do
+        log "Requesting certificate for: ${domain}"
+        $COMPOSE --profile certbot run --rm certbot certonly \
+            --webroot \
+            --webroot-path /var/www/certbot \
+            --email "$email" \
+            --agree-tos \
+            --no-eff-email \
+            --keep-until-expiring \
+            -d "$domain"
+        copy_letsencrypt_cert "$domain"
+    done
+
+    reload_nginx
+    ok "Trusted TLS certificates installed."
+}
+
 cmd_pull() {
     echo ""
     echo -e "${BOLD}━━━  Pulling images from registry  ━━━${NC}"
@@ -229,10 +279,6 @@ cmd_up() {
     echo -e "  ${BOLD}Reporting${NC}-> https://${REPORTING_DOMAIN}"
     echo -e "  ${BOLD}Admin${NC}    -> https://${ADMIN_DOMAIN}"
     echo -e "  ${BOLD}App${NC}      -> https://${APP_DOMAIN}"
-    if local_infra_enabled; then
-        echo -e "  ${BOLD}MinIO${NC}    -> http://localhost:${MINIO_CONSOLE_PORT}  (console)"
-        echo -e "  ${BOLD}Mongo Express${NC} -> http://localhost:${MONGO_EXPRESS_PORT} (admin)"
-    fi
     echo ""
 }
 
@@ -268,14 +314,6 @@ deploy_replicas_for() {
     else
         echo $(( normal + 1 ))
     fi
-}
-
-local_infra_enabled() {
-    if [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]; then
-        [[ "${ALLOW_LOCAL_INFRA_IN_PROD:-false}" == "true" ]] || return 1
-    fi
-
-    [[ ",${COMPOSE_PROFILES:-}," == *",local-infra,"* ]]
 }
 
 print_server_health_response() {
@@ -424,12 +462,6 @@ cmd_health() {
     local svcs=("server" "reporting" "admin" "app")
     local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN")
     local paths=("/health" "/health" "/health" "/")
-
-    if local_infra_enabled && [[ "${MINIO_ENABLED:-false}" == "true" ]]; then
-        svcs+=("minio")
-        domains+=("localhost")
-        paths+=("/minio/health/live")
-    fi
 
     local i
     for i in "${!svcs[@]}"; do
@@ -640,11 +672,12 @@ case "$COMMAND" in
     shell)      cmd_shell     "$@"     ;;
     status)     cmd_status             ;;
     health)     cmd_health             ;;
+    certs)      cmd_certs              ;;
     seed)       cmd_seed      "$@"     ;;
     seed-reports) cmd_seed_reports     ;;
     *)
         echo ""
-        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|seed|seed-reports}"
+        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|certs|seed|seed-reports}"
         echo ""
         echo "  deploy    Pull images then start all services (default)"
         echo "  pull      Pull latest images from the configured registry only"
@@ -661,6 +694,7 @@ case "$COMMAND" in
         echo "  shell     Open terminal in container     (e.g. ./deploy.sh shell server)"
         echo "  status    Show running containers"
         echo "  health    Validate service HTTP endpoints"
+        echo "  certs     Issue/renew trusted Let's Encrypt TLS certificates"
         echo "  seed      Run database seed inside the server container"
         echo "             (e.g. ./deploy.sh seed --upsert --only=locations,offices,menu,products)"
         echo "  seed-reports  Upsert report definitions only"

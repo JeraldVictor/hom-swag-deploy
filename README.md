@@ -9,7 +9,7 @@ Deployment workspace for running the full HomSwag stack with Podman/Docker Compo
 - Pulls/deploys production application images from DigitalOcean Container Registry
 - Pushes release images to `registry.digitalocean.com/homswag-repo` only when requested
 - Starts Kafka, nginx, and application containers in production
-- Starts local MongoDB, Redis, MinIO, and Mongo Express only with the `local-infra` profile
+- Uses externally managed MongoDB/DocumentDB, Valkey/Redis-protocol cache, and object storage
 - Serves public traffic through the compose-managed `nginx` container with SSL
 - Supports environment profiles (`local`, `prod`)
 - Supports deploying only selected services
@@ -78,26 +78,8 @@ storage through `.env.prod`:
 - `KAFKA_BOOTSTRAP_SERVERS`
 
 The deploy health command validates those external services through the server
-`/health` endpoint. It does not probe local MongoDB, Redis, or MinIO containers
-unless the local infra profile is enabled.
-
-### Local data storage mounts
-
-The local MongoDB, Redis, MinIO, and Mongo Express compose services run only
-when `COMPOSE_PROFILES=local-infra`.
-
-You can choose named volumes or host bind paths using env vars:
-
-- `MONGODB_DATA_SOURCE`
-- `MINIO_DATA_SOURCE`
-
-Behavior:
-
-- Empty/unset value → uses named volumes (`mongodb-data`, `minio-data`)
-- Absolute path value → bind-mounts that host path
-
-For local infra, `.env.local` can keep these empty to use Podman/Docker named
-volumes.
+`/health` endpoint. This deploy stack does not run local MongoDB, Valkey/Redis,
+MinIO, or Mongo Express containers.
 
 ### Current production domains
 
@@ -122,8 +104,16 @@ volumes.
   - `nginx/certs/reporting.alpha.homswag.com/privkey.pem`
 
 If a cert is missing, `deploy.sh` creates a temporary 7-day self-signed cert so
-nginx can start. Replace those files with real certificates before serving
-production traffic.
+nginx can start. To issue trusted Let's Encrypt certificates, make sure DNS for
+all four domains points to the deployment host and port `80` is reachable, then
+run:
+
+```bash
+./deploy.sh --env prod certs
+```
+
+The command uses the nginx HTTP-01 challenge path, installs the issued
+certificates into `NGINX_CERTS_PATH`, and reloads nginx.
 
 ---
 
@@ -299,7 +289,8 @@ and `KAFKA_BROKERS` to that service DNS name.
 - At minimum, set strong values for:
   - `MONGO_PASSWORD`
   - `REDIS_PASSWORD`
-  - `MINIO_ROOT_PASSWORD`
+  - `VALKEY_PASSWORD`
+  - `MINIO_SECRET_KEY`
   - `JWT_SECRET`
   - `JWT_REFRESH_SECRET`
 
@@ -317,15 +308,7 @@ openssl rand -hex 32
 - HTTPS: `443`
 - MongoDB: `27017`
 - Redis: `6379`
-- MinIO API: `9000`
-- MinIO Console: `9001`
 - Kafka external listener: `9094`
-- Mongo Express: `8081`
-
-Mongo Express also supports optional basic auth env vars:
-
-- `MONGO_EXPRESS_BASICAUTH_USERNAME` (default: `admin`)
-- `MONGO_EXPRESS_BASICAUTH_PASSWORD` (default: `changeme`)
 
 ---
 
