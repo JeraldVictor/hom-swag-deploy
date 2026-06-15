@@ -271,6 +271,10 @@ deploy_replicas_for() {
 }
 
 local_infra_enabled() {
+    if [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]; then
+        [[ "${ALLOW_LOCAL_INFRA_IN_PROD:-false}" == "true" ]] || return 1
+    fi
+
     [[ ",${COMPOSE_PROFILES:-}," == *",local-infra,"* ]]
 }
 
@@ -444,7 +448,6 @@ cmd_health() {
 
         log "Waiting for $svc at $url (timeout: ${max_wait}s) ..."
         while [[ "$elapsed" -lt "$max_wait" ]]; do
-            local response
             local http_code
             local tmp_body
 
@@ -454,18 +457,19 @@ cmd_health() {
             else
                 http_code=$(curl -k -s -o "$tmp_body" -w "%{http_code}" --max-time 5 --resolve "${domain}:${NGINX_HTTPS_PORT}:127.0.0.1" "$url" || echo "000")
             fi
-            response=$(cat "$tmp_body")
+            if [[ "$svc" == "server" && "$http_code" != "000" ]]; then
+                local response
+                response=$(tr -d '\000' < "$tmp_body")
+                if echo "$response" | grep -q '"services":'; then
+                    last_server_health_response="$response"
+                fi
+            fi
             rm -f "$tmp_body"
 
             if [[ "$http_code" == "200" ]]; then
                 ok "$svc is up  ($url)"
                 svc_ok=true
                 break
-            elif [[ "$http_code" != "000" && "$svc" == "server" ]]; then
-                # Server responded but maybe with 503/207
-                if echo "$response" | grep -q '"services":'; then
-                    last_server_health_response="$response"
-                fi
             fi
             sleep "$interval"
             elapsed=$(( elapsed + interval ))

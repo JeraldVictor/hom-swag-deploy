@@ -65,10 +65,11 @@ Production uses managed services for MongoDB/DocumentDB, Redis, and object
 storage through `.env.prod`:
 
 - `MONGODB_URI`
-- `REDIS_HOST`
-- `REDIS_PORT`
-- `REDIS_PASSWORD`
-- `REDIS_TLS`
+- `VALKEY_HOST` or `REDIS_HOST`
+- `VALKEY_PORT` or `REDIS_PORT`
+- `VALKEY_USERNAME` or `REDIS_USERNAME` when your Valkey credentials include a username
+- `VALKEY_PASSWORD` or `REDIS_PASSWORD`
+- `VALKEY_TLS` or `REDIS_TLS`
 - `MINIO_ENDPOINT`
 - `MINIO_PORT`
 - `MINIO_ACCESS_KEY`
