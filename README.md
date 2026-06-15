@@ -6,9 +6,10 @@ Deployment workspace for running the full HomSwag stack with Podman/Docker Compo
 
 - Uses app sources from `repos/` when present, or from the sibling workspace folders
 - Builds images for `server`, `reporting`, `admin`, `app`, and `kafka`
-- Pulls/deploys application images from Docker Hub by default
+- Pulls/deploys production application images from DigitalOcean Container Registry
 - Pushes release images to `registry.digitalocean.com/homswag-repo` only when requested
 - Starts infrastructure (`mongodb`, `redis`, `minio`, `kafka`) and application containers
+- Serves public traffic through the compose-managed `nginx` container with SSL
 - Supports environment profiles (`local`, `prod`)
 - Supports deploying only selected services
 
@@ -64,6 +65,7 @@ Current defaults:
 - Client app: `https://alpha.homswag.com`
 - Admin: `https://admin.alpha.homswag.com`
 - API: `https://api.alpha.homswag.com`
+- Reporting: `https://reporting.alpha.homswag.com`
 
 ### Nginx TLS routing
 
@@ -77,6 +79,8 @@ Current defaults:
   - `nginx/certs/admin.alpha.homswag.com/privkey.pem`
   - `nginx/certs/api.alpha.homswag.com/fullchain.pem`
   - `nginx/certs/api.alpha.homswag.com/privkey.pem`
+  - `nginx/certs/reporting.alpha.homswag.com/fullchain.pem`
+  - `nginx/certs/reporting.alpha.homswag.com/privkey.pem`
 
 ---
 
@@ -119,6 +123,13 @@ Kafka is pulled from `KAFKA_SOURCE_IMAGE`, then tagged as
 `IMAGE_REGISTRY/hom-swag-kafka:KAFKA_IMAGE_TAG`. `KAFKA_PLATFORM` controls
 which platform variant is repacked and pushed.
 
+For production deploys, `.env.prod` sets:
+
+```bash
+IMAGE_REGISTRY=registry.digitalocean.com/homswag-repo
+PUSH_REGISTRY=registry.digitalocean.com/homswag-repo
+```
+
 ### Deploy existing images
 
 ```bash
@@ -135,6 +146,31 @@ will ignore them when determining which services to act on.
 ./deploy.sh --env local deploy
 ./deploy.sh --env prod deploy
 ```
+
+Production deploy is graceful: it pulls images, scales app services up behind
+nginx, verifies the SSL routes, removes old-image containers, and settles back
+to the configured replica counts.
+
+```bash
+SERVER_REPLICAS=1
+REPORTING_REPLICAS=1
+ADMIN_REPLICAS=1
+APP_REPLICAS=1
+DEPLOY_REPLICAS=2
+```
+
+### Clean deploy
+
+Clean deploy removes the compose stack first, pulls fresh images, starts from
+scratch, validates health, then prunes old images.
+
+```bash
+./deploy.sh --env prod clean
+```
+
+In production, `CLEAN_REMOVE_VOLUMES=true` also removes compose-managed named
+volumes. Host bind mounts such as `/podLogs/...` are not deleted by Docker.
+
 ### Deploy only one app
 
 ```bash
@@ -226,9 +262,8 @@ openssl rand -hex 32
 
 ## Ports (default)
 
-- Server: `3000`
-- Admin: `3001`
-- App: `3002`
+- HTTP: `80`
+- HTTPS: `443`
 - MongoDB: `27017`
 - Redis: `6379`
 - MinIO API: `9000`

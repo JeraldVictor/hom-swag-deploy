@@ -1,6 +1,6 @@
 # HomSwag — Docker/Podman Compose
-# Application images are pulled from Docker Hub — no local build required
-# Ports: server ${SERVER_PORT:-3000} | admin ${ADMIN_PORT:-3001} | app ${APP_PORT:-3002}
+# HomSwag images are pulled from IMAGE_REGISTRY — no local build required
+# Public traffic is served by nginx on ${NGINX_HTTP_PORT:-80}/${NGINX_HTTPS_PORT:-443}
 
 services:
 
@@ -97,16 +97,15 @@ services:
       - homswag-net
 
   # ────────────────────────────────────────────────────────────────
-  # Applications (pre-built images — pulled from Docker Hub)
+  # Applications (pre-built images — pulled from IMAGE_REGISTRY)
   # ────────────────────────────────────────────────────────────────
 
   server:
     image: ${IMAGE_REGISTRY:-docker.io/jeraldvictor}/hom-swag-server:${SERVER_IMAGE_TAG:-latest}
     pull_policy: always
-    container_name: homswag-server
     restart: unless-stopped
-    ports:
-      - "${SERVER_PORT:-3000}:3000"
+    expose:
+      - "3000"
     environment:
       NODE_OPTIONS: "--max-http-header-size=65536"
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
@@ -135,10 +134,9 @@ services:
   reporting:
     image: ${IMAGE_REGISTRY:-docker.io/jeraldvictor}/hom-swag-reporting:${REPORTING_IMAGE_TAG:-latest}
     pull_policy: always
-    container_name: homswag-reporting
     restart: unless-stopped
-    ports:
-      - "${REPORTING_PORT:-3003}:3000"
+    expose:
+      - "3000"
     environment:
       PORT: 3000
       KAFKA_BROKERS: ${KAFKA_BROKERS:-kafka:9092}
@@ -190,22 +188,48 @@ services:
   admin:
     image: ${IMAGE_REGISTRY:-docker.io/jeraldvictor}/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}
     pull_policy: always
-    container_name: homswag-admin
     restart: unless-stopped
-    ports:
-      - "${ADMIN_PORT:-3001}:80"
+    expose:
+      - "80"
     networks:
       - homswag-net
 
   app:
     image: ${IMAGE_REGISTRY:-docker.io/jeraldvictor}/hom-swag-app:${APP_IMAGE_TAG:-latest}
     pull_policy: always
-    container_name: homswag-app
     restart: unless-stopped
-    ports:
-      - "${APP_PORT:-3002}:3000"
+    expose:
+      - "3000"
     env_file:
       - ${DEPLOY_ENV_FILE:-.env.local}
+    networks:
+      - homswag-net
+
+  nginx:
+    image: docker.io/nginx:1.27-alpine
+    container_name: homswag-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-alpha.homswag.com}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.alpha.homswag.com}
+      API_DOMAIN: ${API_DOMAIN:-api.alpha.homswag.com}
+      REPORTING_DOMAIN: ${REPORTING_DOMAIN:-reporting.alpha.homswag.com}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ${NGINX_CERTS_PATH:-./nginx/certs}:/etc/nginx/certs:ro
+      - nginx-cache:/var/cache/nginx
+    depends_on:
+      server:
+        condition: service_started
+      reporting:
+        condition: service_started
+      admin:
+        condition: service_started
+      app:
+        condition: service_started
     networks:
       - homswag-net
 
@@ -218,6 +242,7 @@ volumes:
   redis-data:
   minio-data:
   kafka-data:
+  nginx-cache:
 
 # ────────────────────────────────────────────────────────────────
 # Internal network

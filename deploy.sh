@@ -12,7 +12,7 @@
 #   ./deploy.sh restart [svc...]     # restart one or all containers
 #   ./deploy.sh recreate [svc...]    # force-recreate one or all containers
 #   ./deploy.sh refresh [svc...]     # pull + force-recreate one or all containers
-#   ./deploy.sh clean                # fresh pull, start, verify health, then prune old images
+#   ./deploy.sh clean                # remove stack, pull fresh images, start, verify health, prune
 #   ./deploy.sh down                 # stop and remove containers (volumes kept)
 #   ./deploy.sh prune                # docker system prune -a --volumes (full cleanup)
 #   ./deploy.sh logs [svc...]        # follow logs, last 100 lines
@@ -92,7 +92,11 @@ if [[ -z "$COMMAND" ]]; then
     COMMAND="deploy"
 fi
 
-set -- "${REMAINING_ARGS[@]}"
+if [[ "${#REMAINING_ARGS[@]}" -gt 0 ]]; then
+    set -- "${REMAINING_ARGS[@]}"
+else
+    set --
+fi
 
 case "$ENV_PROFILE" in
     local)           ENV_FILE=".env.local" ;;
@@ -133,6 +137,17 @@ APP_PORT="${APP_PORT:-3002}"
 REPORTING_PORT="${REPORTING_PORT:-3003}"
 MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-9001}"
 MONGO_EXPRESS_PORT="${MONGO_EXPRESS_PORT:-8081}"
+NGINX_HTTP_PORT="${NGINX_HTTP_PORT:-80}"
+NGINX_HTTPS_PORT="${NGINX_HTTPS_PORT:-443}"
+APP_DOMAIN="${APP_DOMAIN:-alpha.homswag.com}"
+ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.alpha.homswag.com}"
+API_DOMAIN="${API_DOMAIN:-api.alpha.homswag.com}"
+REPORTING_DOMAIN="${REPORTING_DOMAIN:-reporting.alpha.homswag.com}"
+SERVER_REPLICAS="${SERVER_REPLICAS:-1}"
+REPORTING_REPLICAS="${REPORTING_REPLICAS:-1}"
+ADMIN_REPLICAS="${ADMIN_REPLICAS:-1}"
+APP_REPLICAS="${APP_REPLICAS:-1}"
+DEPLOY_REPLICAS="${DEPLOY_REPLICAS:-2}"
 
 # =============================================================================
 # Sub-commands
@@ -149,58 +164,100 @@ cmd_pull() {
 cmd_up() {
     echo ""
     echo -e "${BOLD}━━━  Starting services  ━━━${NC}"
-    $COMPOSE up -d
+    $COMPOSE up -d --remove-orphans \
+        --scale server="$SERVER_REPLICAS" \
+        --scale reporting="$REPORTING_REPLICAS" \
+        --scale admin="$ADMIN_REPLICAS" \
+        --scale app="$APP_REPLICAS"
     echo ""
     ok "Containers started:"
     $COMPOSE ps
     echo ""
-    echo -e "  ${BOLD}Server${NC}   -> http://localhost:${SERVER_PORT}"
-    echo -e "  ${BOLD}Reporting${NC}-> http://localhost:${REPORTING_PORT}"
-    echo -e "  ${BOLD}Admin${NC}    -> http://localhost:${ADMIN_PORT}"
-    echo -e "  ${BOLD}App${NC}      -> http://localhost:${APP_PORT}"
+    echo -e "  ${BOLD}API${NC}      -> https://${API_DOMAIN}"
+    echo -e "  ${BOLD}Reporting${NC}-> https://${REPORTING_DOMAIN}"
+    echo -e "  ${BOLD}Admin${NC}    -> https://${ADMIN_DOMAIN}"
+    echo -e "  ${BOLD}App${NC}      -> https://${APP_DOMAIN}"
     echo -e "  ${BOLD}MinIO${NC}    -> http://localhost:${MINIO_CONSOLE_PORT}  (console)"
     echo -e "  ${BOLD}Mongo Express${NC} -> http://localhost:${MONGO_EXPRESS_PORT} (admin)"
     echo ""
 }
 
-# ---------------------------------------------------------------------------
-# cmd_safe_deploy — zero-downtime production deployment
-#
-# Flow:
-#   1. Pull new images (live containers keep running their current images)
-#   2. Start canary copies of the 3 app services on temporary offset ports
-#      connected to the existing homswag-net (reuses live DB/Redis/MinIO)
-#   3. Health-check the canary containers
-#   4a. PASS → remove canary, force-recreate real containers, final health check
-#   4b. FAIL → remove canary, old stack stays up, exit 1
-# ---------------------------------------------------------------------------
-cmd_safe_deploy() {
-    local canary_server_port=$(( SERVER_PORT + 100 ))
-    local canary_reporting_port=$(( REPORTING_PORT + 100 ))
-    local canary_admin_port=$(( ADMIN_PORT  + 100 ))
-    local canary_app_port=$(( APP_PORT    + 100 ))
-
+app_image_for() {
+    local service="$1"
     local registry="${IMAGE_REGISTRY:-docker.io/jeraldvictor}"
     registry="${registry%/}"
-    local server_img="${registry}/hom-swag-server:${SERVER_IMAGE_TAG:-latest}"
-    local reporting_img="${registry}/hom-swag-reporting:${REPORTING_IMAGE_TAG:-latest}"
-    local admin_img="${registry}/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}"
-    local app_img="${registry}/hom-swag-app:${APP_IMAGE_TAG:-latest}"
 
-    # Ensure canary containers are removed on exit/interrupt in all cases
-    cleanup_canary() {
-        log "Cleaning up canary containers ..."
-        docker rm -f homswag-canary-server homswag-canary-reporting homswag-canary-admin homswag-canary-app 2>/dev/null || true
-    }
-    trap cleanup_canary EXIT INT TERM
+    case "$service" in
+        server)    echo "${registry}/hom-swag-server:${SERVER_IMAGE_TAG:-latest}" ;;
+        reporting) echo "${registry}/hom-swag-reporting:${REPORTING_IMAGE_TAG:-latest}" ;;
+        admin)     echo "${registry}/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}" ;;
+        app)       echo "${registry}/hom-swag-app:${APP_IMAGE_TAG:-latest}" ;;
+        *)         die "Unknown app service: $service" ;;
+    esac
+}
 
-    # ── 1. Pull new images ────────────────────────────────────────────────────
+replicas_for() {
+    case "$1" in
+        server)    echo "$SERVER_REPLICAS" ;;
+        reporting) echo "$REPORTING_REPLICAS" ;;
+        admin)     echo "$ADMIN_REPLICAS" ;;
+        app)       echo "$APP_REPLICAS" ;;
+        *)         die "Unknown app service: $1" ;;
+    esac
+}
+
+deploy_replicas_for() {
+    local normal
+    normal="$(replicas_for "$1")"
+    if [[ "$DEPLOY_REPLICAS" -gt "$normal" ]]; then
+        echo "$DEPLOY_REPLICAS"
+    else
+        echo $(( normal + 1 ))
+    fi
+}
+
+reload_nginx() {
+    if $COMPOSE ps -q nginx 2>/dev/null | grep -q .; then
+        log "Reloading nginx ..."
+        $COMPOSE exec -T nginx nginx -s reload >/dev/null 2>&1 || warn "nginx reload failed; container restart may still pick up config."
+    fi
+}
+
+remove_outdated_service_containers() {
+    local service="$1"
+    local image="$2"
+    local desired="$3"
+    local new_image_id
+    new_image_id="$(docker image inspect "$image" --format '{{.Id}}')" || die "Unable to inspect pulled image: $image"
+
+    local cid
+    for cid in $($COMPOSE ps -q "$service"); do
+        local container_image_id
+        container_image_id="$(docker inspect "$cid" --format '{{.Image}}')"
+        if [[ "$container_image_id" != "$new_image_id" ]]; then
+            log "Removing old $service container $cid"
+            docker rm -f "$cid" >/dev/null
+        fi
+    done
+
+    $COMPOSE up -d --no-recreate --scale "$service=$desired" "$service"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_safe_deploy — graceful production deployment
+#
+# Flow:
+#   1. Pull new images while live containers keep serving traffic.
+#   2. Scale app services up behind nginx using the newly pulled images.
+#   3. Validate the public nginx/SSL routes.
+#   4. Remove containers still running old image IDs.
+#   5. Settle services back to their configured replica counts.
+# ---------------------------------------------------------------------------
+cmd_safe_deploy() {
     cmd_pull
 
-    # ── 2a. If nothing is running yet, skip the canary dance ─────────────────
     if ! $COMPOSE ps --quiet 2>/dev/null | grep -q .; then
         log "No existing stack detected — performing standard deploy"
-        trap - EXIT INT TERM
         cmd_up
         cmd_health
         log "Pruning dangling images ..."
@@ -209,148 +266,43 @@ cmd_safe_deploy() {
         return
     fi
 
-    log "Live stack detected — starting canary containers alongside it"
-
-    # ── 2b. Resolve volume paths to absolute paths ────────────────────────────
-    local env_file_abs upload_src log_src
-    env_file_abs="$(realpath "$ENV_FILE")"
-    upload_src="${UPLOAD_SOURCE:-${SCRIPT_DIR}/uploads}"
-    log_src="${LOG_PATH:-${SCRIPT_DIR}/logs}"
-    [[ "$upload_src" = /* ]] || upload_src="${SCRIPT_DIR}/${upload_src}"
-    [[ "$log_src"    = /* ]] || log_src="${SCRIPT_DIR}/${log_src}"
-
-    # Remove any leftover canary containers from a previous failed run
-    docker rm -f homswag-canary-server homswag-canary-reporting homswag-canary-admin homswag-canary-app 2>/dev/null || true
-
-    # ── 2c. Start canary containers ───────────────────────────────────────────
     echo ""
-    echo -e "${BOLD}━━━  Launching canary containers  ━━━${NC}"
-    log "Canary ports → server:${canary_server_port}  reporting:${canary_reporting_port}  admin:${canary_admin_port}  app:${canary_app_port}"
+    echo -e "${BOLD}━━━  Scaling new replicas  ━━━${NC}"
+    local server_deploy_replicas reporting_deploy_replicas admin_deploy_replicas app_deploy_replicas
+    server_deploy_replicas="$(deploy_replicas_for server)"
+    reporting_deploy_replicas="$(deploy_replicas_for reporting)"
+    admin_deploy_replicas="$(deploy_replicas_for admin)"
+    app_deploy_replicas="$(deploy_replicas_for app)"
+    log "Starting extra app replicas behind nginx"
+    $COMPOSE up -d --remove-orphans mongodb redis minio kafka
+    $COMPOSE up -d --no-recreate --remove-orphans \
+        --scale server="$server_deploy_replicas" \
+        --scale reporting="$reporting_deploy_replicas" \
+        --scale admin="$admin_deploy_replicas" \
+        --scale app="$app_deploy_replicas" \
+        server reporting admin app nginx
+    reload_nginx
 
-    docker run -d \
-        --name homswag-canary-server \
-        --network homswag-net \
-        -p "${canary_server_port}:3000" \
-        --env-file "$ENV_FILE" \
-        -v "${env_file_abs}:/app/.env:ro" \
-        -v "${upload_src}:/app/uploads" \
-        -v "${log_src}:/app/logs" \
-        "$server_img" || die "Failed to start canary server"
+    cmd_health
 
-    docker run -d \
-        --name homswag-canary-reporting \
-        --network homswag-net \
-        -p "${canary_reporting_port}:3000" \
-        --env-file "$ENV_FILE" \
-        -e PORT=3000 \
-        -e REPORTING_REQUEST_TOPIC=homswag.reporting.canary.requests \
-        -e REPORTING_EVENT_TOPIC=homswag.reporting.canary.events \
-        -e REPORTING_DEAD_LETTER_TOPIC=homswag.reporting.canary.dead-letter \
-        -e REPORTING_CONSUMER_GROUP=homswag-reporting-canary-workers \
-        "$reporting_img" || die "Failed to start canary reporting"
-
-    docker run -d \
-        --name homswag-canary-admin \
-        --network homswag-net \
-        -p "${canary_admin_port}:80" \
-        "$admin_img" || die "Failed to start canary admin"
-
-    docker run -d \
-        --name homswag-canary-app \
-        --network homswag-net \
-        -p "${canary_app_port}:3000" \
-        --env-file "$ENV_FILE" \
-        "$app_img" || die "Failed to start canary app"
-
-    ok "Canary containers started"
-
-    # ── 3. Health-check the canary containers ─────────────────────────────────
     echo ""
-    echo -e "${BOLD}━━━  Canary health validation  ━━━${NC}"
-
-    local max_wait="${HEALTH_TIMEOUT:-90}"
-    local interval=5
-    local canary_ok=true
-
-    local svcs=("server"                                         "reporting"                              "admin"                              "app")
-    local urls=("http://localhost:${canary_server_port}/health"  "http://localhost:${canary_reporting_port}/health"  "http://localhost:${canary_admin_port}"  "http://localhost:${canary_app_port}")
-
-    local i
-    for i in 0 1 2 3; do
-        local svc="${svcs[$i]}"
-        local url="${urls[$i]}"
-        local svc_ok=false
-        local elapsed=0
-
-        log "Waiting for canary ${svc} at ${url} (timeout: ${max_wait}s) ..."
-        while [[ "$elapsed" -lt "$max_wait" ]]; do
-            local response
-            local http_code
-            local tmp_body
-
-            tmp_body=$(mktemp /tmp/canary_XXXXXX)
-            http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$url" || echo "000")
-            response=$(cat "$tmp_body")
-            rm -f "$tmp_body"
-
-            if [[ "$http_code" == "200" ]]; then
-                ok "Canary ${svc} is healthy  (${url})"
-                svc_ok=true
-                break
-            elif [[ "$http_code" != "000" && "$svc" == "server" ]]; then
-                # Server responded but maybe with 503/207
-                if echo "$response" | grep -q '"services":'; then
-                    warn "Canary ${svc} responded but reports UNHEALTHY sub-services"
-                    for sub in Server MongoDB Redis MinIO; do
-                        local sub_line=$(echo "$response" | grep -o "\"service\":\"$sub\",\"status\":\"[^\"]*\"" || true)
-                        if [[ -n "$sub_line" ]]; then
-                            local sub_status=$(echo "$sub_line" | sed 's/.*"status":"\([^"]*\)".*/\1/')
-                            if [[ "$sub_status" == "healthy" ]]; then
-                                echo -e "      ${GREEN}•${NC} $sub: $sub_status"
-                            else
-                                echo -e "      ${RED}•${NC} $sub: $sub_status"
-                            fi
-                        fi
-                    done
-                    canary_ok=false
-                    break
-                fi
-            fi
-            sleep "$interval"
-            elapsed=$(( elapsed + interval ))
-        done
-
-        if [[ "$svc_ok" == false ]]; then
-            warn "Canary ${svc} did NOT respond at ${url} within ${max_wait}s"
-            canary_ok=false
-        fi
+    echo -e "${BOLD}━━━  Removing old app containers  ━━━${NC}"
+    local service
+    for service in server reporting admin app; do
+        remove_outdated_service_containers "$service" "$(app_image_for "$service")" "$(replicas_for "$service")"
     done
-
-    # ── 4. Act on canary result ───────────────────────────────────────────────
-    echo ""
-    if [[ "$canary_ok" == false ]]; then
-        warn "Canary health checks FAILED."
-        warn "Old production stack is preserved and still running."
-        warn "Run './deploy.sh logs' to investigate the canary output."
-        # EXIT trap fires → cleanup_canary removes canary containers
-        exit 1
-    fi
-
-    ok "Canary is healthy — swapping production stack ..."
-
-    # Remove canary containers before reclaiming the real ports
-    cleanup_canary
-    trap - EXIT INT TERM
-
-    # Force-recreate only app services (infra is untouched)
-    $COMPOSE up -d --force-recreate server reporting admin app
-
-    # Final production health check (if this fails the script exits non-zero)
+    $COMPOSE up -d --no-recreate --remove-orphans \
+        --scale server="$SERVER_REPLICAS" \
+        --scale reporting="$REPORTING_REPLICAS" \
+        --scale admin="$ADMIN_REPLICAS" \
+        --scale app="$APP_REPLICAS" \
+        nginx
+    reload_nginx
     cmd_health
 
     log "Pruning dangling images ..."
     docker image prune -f
-    ok "Zero-downtime deploy complete."
+    ok "Graceful deploy complete."
 }
 
 cmd_deploy() {
@@ -383,18 +335,27 @@ cmd_health() {
     local all_ok=true
 
     # Parallel arrays — avoids associative arrays (bash 3.2 on macOS)
-    local svcs=("server"                                  "reporting"                       "admin"                       "app")
-    local urls=("http://localhost:${SERVER_PORT}/health"  "http://localhost:${REPORTING_PORT}/health"  "http://localhost:${ADMIN_PORT}"  "http://localhost:${APP_PORT}")
+    local svcs=("server" "reporting" "admin" "app")
+    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN")
+    local paths=("/health" "/health" "/health" "/")
 
     if [[ "${MINIO_ENABLED:-false}" == "true" ]]; then
         svcs+=("minio")
-        urls+=("http://localhost:${MINIO_PORT:-9000}/minio/health/live")
+        domains+=("localhost")
+        paths+=("/minio/health/live")
     fi
 
     local i
     for i in "${!svcs[@]}"; do
         local svc="${svcs[$i]}"
-        local url="${urls[$i]}"
+        local domain="${domains[$i]}"
+        local path="${paths[$i]}"
+        local url
+        if [[ "$svc" == "minio" ]]; then
+            url="http://localhost:${MINIO_PORT:-9000}${path}"
+        else
+            url="https://${domain}:${NGINX_HTTPS_PORT}${path}"
+        fi
         local svc_ok=false
         local elapsed=0
 
@@ -405,7 +366,11 @@ cmd_health() {
             local tmp_body
 
             tmp_body=$(mktemp /tmp/health_XXXXXX)
-            http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$url" || echo "000")
+            if [[ "$svc" == "minio" ]]; then
+                http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$url" || echo "000")
+            else
+                http_code=$(curl -k -s -o "$tmp_body" -w "%{http_code}" --max-time 5 --resolve "${domain}:${NGINX_HTTPS_PORT}:127.0.0.1" "$url" || echo "000")
+            fi
             response=$(cat "$tmp_body")
             rm -f "$tmp_body"
 
@@ -487,9 +452,30 @@ cmd_refresh() {
     $COMPOSE ps
 }
 
-# Full clean: same as deploy (pull, start, health check, prune dangling images)
+# Full clean: remove the compose stack, pull fresh images, start, health check,
+# then prune old images. Volumes are removed when CLEAN_REMOVE_VOLUMES=true.
 cmd_clean() {
-    cmd_deploy
+    echo ""
+    echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
+    echo -e "${BOLD}║      HomSwag — Clean Deploy          ║${NC}"
+    echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
+    echo -e "  Env profile : ${BOLD}${ENV_PROFILE}${NC}  (${ENV_FILE})"
+    echo -e "  Remove volumes : ${BOLD}${CLEAN_REMOVE_VOLUMES:-false}${NC}"
+    echo ""
+
+    warn "Stopping and removing the current compose stack ..."
+    if [[ "${CLEAN_REMOVE_VOLUMES:-false}" == "true" ]]; then
+        $COMPOSE down --remove-orphans --volumes || true
+    else
+        $COMPOSE down --remove-orphans || true
+    fi
+
+    cmd_pull
+    cmd_up
+    cmd_health
+    log "Pruning dangling images ..."
+    docker image prune -f
+    ok "Clean deploy complete."
 }
 
 cmd_down() {
@@ -533,9 +519,8 @@ cmd_logs_all() {
 cmd_shell() {
     local svc="${1:-}"
     [[ -n "$svc" ]] || die "Usage: ./deploy.sh shell <service>"
-    local container="homswag-${svc}"
-    log "Opening shell in container: $container"
-    docker exec -it "$container" sh -c 'which bash > /dev/null 2>&1 && exec bash || exec sh'
+    log "Opening shell in compose service: $svc"
+    $COMPOSE exec "$svc" sh -c 'which bash > /dev/null 2>&1 && exec bash || exec sh'
 }
 
 cmd_status() {
@@ -544,9 +529,8 @@ cmd_status() {
 
 # Run the compiled seed script inside the server container
 cmd_seed() {
-    local container="homswag-server"
-    log "Running seed in container: $container ..."
-    docker exec -it "$container" node dist/seed.cjs "$@"
+    log "Running seed in compose service: server ..."
+    $COMPOSE exec server node dist/seed.cjs "$@"
     ok "Seed complete"
 }
 
@@ -587,7 +571,7 @@ case "$COMMAND" in
         echo "  restart   Restart containers          (e.g. ./deploy.sh restart server)"
         echo "  recreate  Force-recreate containers   (e.g. ./deploy.sh recreate server)"
         echo "  refresh   Pull + force-recreate       (e.g. ./deploy.sh refresh server)"
-        echo "  clean     Fresh pull, start all services, verify health, then prune old images"
+        echo "  clean     Remove stack, pull fresh images, start, verify health, then prune"
         echo "  down      Stop and remove containers (volumes kept)"
         echo "  prune     Remove ALL unused Docker resources (docker system prune -a --volumes)"
         echo "  logs      Follow logs, last 100 lines  (e.g. ./deploy.sh logs app)"

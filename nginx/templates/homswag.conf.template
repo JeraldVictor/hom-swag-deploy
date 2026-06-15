@@ -1,0 +1,123 @@
+resolver 127.0.0.11 valid=10s ipv6=off;
+
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+upstream homswag_server {
+    server server:3000;
+}
+
+upstream homswag_reporting {
+    server reporting:3000;
+}
+
+upstream homswag_admin {
+    server admin:80;
+}
+
+upstream homswag_app {
+    server app:3000;
+}
+
+server {
+    listen 80;
+    server_name ${APP_DOMAIN} ${ADMIN_DOMAIN} ${API_DOMAIN} ${REPORTING_DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ${API_DOMAIN};
+
+    ssl_certificate /etc/nginx/certs/${API_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/${API_DOMAIN}/privkey.pem;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 50m;
+
+    location / {
+        proxy_pass http://homswag_server;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ${REPORTING_DOMAIN};
+
+    ssl_certificate /etc/nginx/certs/${REPORTING_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/${REPORTING_DOMAIN}/privkey.pem;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 50m;
+
+    location / {
+        proxy_pass http://homswag_reporting;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ${ADMIN_DOMAIN};
+
+    ssl_certificate /etc/nginx/certs/${ADMIN_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/${ADMIN_DOMAIN}/privkey.pem;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        proxy_pass http://homswag_admin;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    server_name ${APP_DOMAIN};
+
+    ssl_certificate /etc/nginx/certs/${APP_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/nginx/certs/${APP_DOMAIN}/privkey.pem;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        proxy_pass http://homswag_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+}
