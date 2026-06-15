@@ -229,8 +229,10 @@ cmd_up() {
     echo -e "  ${BOLD}Reporting${NC}-> https://${REPORTING_DOMAIN}"
     echo -e "  ${BOLD}Admin${NC}    -> https://${ADMIN_DOMAIN}"
     echo -e "  ${BOLD}App${NC}      -> https://${APP_DOMAIN}"
-    echo -e "  ${BOLD}MinIO${NC}    -> http://localhost:${MINIO_CONSOLE_PORT}  (console)"
-    echo -e "  ${BOLD}Mongo Express${NC} -> http://localhost:${MONGO_EXPRESS_PORT} (admin)"
+    if local_infra_enabled; then
+        echo -e "  ${BOLD}MinIO${NC}    -> http://localhost:${MINIO_CONSOLE_PORT}  (console)"
+        echo -e "  ${BOLD}Mongo Express${NC} -> http://localhost:${MONGO_EXPRESS_PORT} (admin)"
+    fi
     echo ""
 }
 
@@ -266,6 +268,34 @@ deploy_replicas_for() {
     else
         echo $(( normal + 1 ))
     fi
+}
+
+local_infra_enabled() {
+    [[ ",${COMPOSE_PROFILES:-}," == *",local-infra,"* ]]
+}
+
+print_server_health_response() {
+    local response="$1"
+    warn "server responded but reports UNHEALTHY sub-services"
+    local sub
+    for sub in Server MongoDB Redis MinIO; do
+        local sub_line
+        local sub_error
+        sub_line=$(echo "$response" | grep -o "\"service\":\"$sub\",\"status\":\"[^\"]*\"" || true)
+        sub_error=$(echo "$response" | grep -o "\"service\":\"$sub\"[^}]*\"error\":\"[^\"]*\"" | sed 's/.*"error":"\([^"]*\)".*/\1/' || true)
+        if [[ -n "$sub_line" ]]; then
+            local sub_status
+            sub_status=$(echo "$sub_line" | sed 's/.*"status":"\([^"]*\)".*/\1/')
+            if [[ "$sub_status" == "healthy" ]]; then
+                echo -e "      ${GREEN}•${NC} $sub: $sub_status"
+            else
+                echo -e "      ${RED}•${NC} $sub: $sub_status"
+                if [[ -n "$sub_error" ]]; then
+                    echo -e "        ${YELLOW}${sub_error}${NC}"
+                fi
+            fi
+        fi
+    done
 }
 
 reload_nginx() {
@@ -391,7 +421,7 @@ cmd_health() {
     local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN")
     local paths=("/health" "/health" "/health" "/")
 
-    if [[ "${MINIO_ENABLED:-false}" == "true" ]]; then
+    if local_infra_enabled && [[ "${MINIO_ENABLED:-false}" == "true" ]]; then
         svcs+=("minio")
         domains+=("localhost")
         paths+=("/minio/health/live")
@@ -410,6 +440,7 @@ cmd_health() {
         fi
         local svc_ok=false
         local elapsed=0
+        local last_server_health_response=""
 
         log "Waiting for $svc at $url (timeout: ${max_wait}s) ..."
         while [[ "$elapsed" -lt "$max_wait" ]]; do
@@ -433,20 +464,7 @@ cmd_health() {
             elif [[ "$http_code" != "000" && "$svc" == "server" ]]; then
                 # Server responded but maybe with 503/207
                 if echo "$response" | grep -q '"services":'; then
-                    warn "$svc responded but reports UNHEALTHY sub-services"
-                    for sub in Server MongoDB Redis MinIO; do
-                        local sub_line=$(echo "$response" | grep -o "\"service\":\"$sub\",\"status\":\"[^\"]*\"" || true)
-                        if [[ -n "$sub_line" ]]; then
-                            local sub_status=$(echo "$sub_line" | sed 's/.*"status":"\([^"]*\)".*/\1/')
-                            if [[ "$sub_status" == "healthy" ]]; then
-                                echo -e "      ${GREEN}•${NC} $sub: $sub_status"
-                            else
-                                echo -e "      ${RED}•${NC} $sub: $sub_status"
-                            fi
-                        fi
-                    done
-                    all_ok=false
-                    break
+                    last_server_health_response="$response"
                 fi
             fi
             sleep "$interval"
@@ -454,7 +472,12 @@ cmd_health() {
         done
 
         if [[ "$svc_ok" == false ]]; then
-            warn "$svc did NOT respond at $url within ${max_wait}s"
+            if [[ "$svc" == "server" && -n "$last_server_health_response" ]]; then
+                print_server_health_response "$last_server_health_response"
+                warn "$svc health did not become healthy at $url within ${max_wait}s"
+            else
+                warn "$svc did NOT respond at $url within ${max_wait}s"
+            fi
             all_ok=false
         fi
     done

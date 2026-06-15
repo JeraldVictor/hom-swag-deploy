@@ -59,10 +59,28 @@ The script accepts profile selection with:
 
 If no profile is passed, it defaults to `local`.
 
-### Data storage mounts (MongoDB / MinIO)
+### External data services
 
 Production uses managed services for MongoDB/DocumentDB, Redis, and object
-storage through `.env.prod` (`MONGODB_URI`, `REDIS_HOST`, `MINIO_ENDPOINT`).
+storage through `.env.prod`:
+
+- `MONGODB_URI`
+- `REDIS_HOST`
+- `REDIS_PORT`
+- `REDIS_PASSWORD`
+- `REDIS_TLS`
+- `MINIO_ENDPOINT`
+- `MINIO_PORT`
+- `MINIO_ACCESS_KEY`
+- `MINIO_SECRET_KEY`
+- `MINIO_USE_SSL`
+
+The deploy health command validates those external services through the server
+`/health` endpoint. It does not probe local MongoDB, Redis, or MinIO containers
+unless the local infra profile is enabled.
+
+### Local data storage mounts
+
 The local MongoDB, Redis, MinIO, and Mongo Express compose services run only
 when `COMPOSE_PROFILES=local-infra`.
 
@@ -76,12 +94,8 @@ Behavior:
 - Empty/unset value → uses named volumes (`mongodb-data`, `minio-data`)
 - Absolute path value → bind-mounts that host path
 
-Current defaults:
-
-- `.env.local` keeps both empty (Podman/Docker named volumes)
-- `.env.prod` sets:
-  - `MONGODB_DATA_SOURCE=/app/mongodata`
-  - `MINIO_DATA_SOURCE=/app/miniodata`
+For local infra, `.env.local` can keep these empty to use Podman/Docker named
+volumes.
 
 ### Current production domains
 
