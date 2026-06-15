@@ -8,7 +8,8 @@ Deployment workspace for running the full HomSwag stack with Podman/Docker Compo
 - Builds images for `server`, `reporting`, `admin`, `app`, and `kafka`
 - Pulls/deploys production application images from DigitalOcean Container Registry
 - Pushes release images to `registry.digitalocean.com/homswag-repo` only when requested
-- Starts infrastructure (`mongodb`, `redis`, `minio`, `kafka`) and application containers
+- Starts Kafka, nginx, and application containers in production
+- Starts local MongoDB, Redis, MinIO, and Mongo Express only with the `local-infra` profile
 - Serves public traffic through the compose-managed `nginx` container with SSL
 - Supports environment profiles (`local`, `prod`)
 - Supports deploying only selected services
@@ -59,6 +60,11 @@ The script accepts profile selection with:
 If no profile is passed, it defaults to `local`.
 
 ### Data storage mounts (MongoDB / MinIO)
+
+Production uses managed services for MongoDB/DocumentDB, Redis, and object
+storage through `.env.prod` (`MONGODB_URI`, `REDIS_HOST`, `MINIO_ENDPOINT`).
+The local MongoDB, Redis, MinIO, and Mongo Express compose services run only
+when `COMPOSE_PROFILES=local-infra`.
 
 You can choose named volumes or host bind paths using env vars:
 

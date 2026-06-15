@@ -11,6 +11,8 @@ services:
   mongodb:
     image: docker.io/mongo:8
     container_name: homswag-mongodb
+    profiles:
+      - local-infra
     restart: unless-stopped
     ports:
       - "${MONGO_PORT:-27017}:27017"
@@ -33,6 +35,8 @@ services:
   mongo-express:
     image: mongo-express:latest
     container_name: homswag-mongo-express
+    profiles:
+      - local-infra
     restart: unless-stopped
     ports:
       - "${MONGO_EXPRESS_PORT:-8081}:8081"
@@ -40,6 +44,7 @@ services:
       mongodb:
         condition: service_healthy
     environment:
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGO_USER:-admin}:${MONGO_PASSWORD:-changeme}@mongodb:27017/homswag?authSource=admin
       ME_CONFIG_MONGODB_SERVER: mongodb
       ME_CONFIG_MONGODB_PORT: 27017
       ME_CONFIG_MONGODB_ENABLE_ADMIN: true
@@ -53,6 +58,8 @@ services:
   redis:
     image: docker.io/redis:7-alpine
     container_name: homswag-redis
+    profiles:
+      - local-infra
     restart: unless-stopped
     # redis is internal only — no external port exposed
     command:
@@ -77,6 +84,8 @@ services:
   minio:
     image: docker.io/minio/minio:latest
     container_name: homswag-minio
+    profiles:
+      - local-infra
     restart: unless-stopped
     ports:
       - "${MINIO_PORT:-9000}:9000"
@@ -120,12 +129,6 @@ services:
       - ${UPLOAD_SOURCE:-./uploads}:/app/uploads
       - ${LOG_PATH:-./logs}:/app/logs
     depends_on:
-      mongodb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
       kafka:
         condition: service_healthy
     networks:
@@ -150,10 +153,6 @@ services:
     env_file:
       - ${DEPLOY_ENV_FILE:-.env.local}
     depends_on:
-      mongodb:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
       kafka:
         condition: service_healthy
     networks:

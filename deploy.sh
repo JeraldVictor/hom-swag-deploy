@@ -301,7 +301,7 @@ cmd_safe_deploy() {
     admin_deploy_replicas="$(deploy_replicas_for admin)"
     app_deploy_replicas="$(deploy_replicas_for app)"
     log "Starting extra app replicas behind nginx"
-    $COMPOSE up -d --remove-orphans mongodb redis minio kafka
+    $COMPOSE up -d --remove-orphans kafka
     $COMPOSE up -d --no-recreate --remove-orphans \
         --scale server="$server_deploy_replicas" \
         --scale reporting="$reporting_deploy_replicas" \
