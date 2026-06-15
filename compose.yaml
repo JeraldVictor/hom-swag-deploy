@@ -117,7 +117,7 @@ services:
       REPORTING_DOMAIN: ${REPORTING_DOMAIN:-reporting.alpha.homswag.com}
     volumes:
       - ./nginx/templates:/etc/nginx/templates:ro
-      - ./nginx/docker-entrypoint.d:/docker-entrypoint.d:ro
+      - ./nginx/docker-entrypoint.d/05-remove-default-conf.sh:/docker-entrypoint.d/05-remove-default-conf.sh:ro
       - ${NGINX_CERTS_PATH:-./nginx/certs}:/etc/nginx/certs:ro
       - ./nginx/certbot:/var/www/certbot:ro
       - nginx-cache:/var/cache/nginx
