@@ -18,12 +18,29 @@ Deployment workspace for running the full HomSwag stack with Podman/Docker Compo
 ## Prerequisites
 
 - `podman` (preferred) or `docker`
+- `doctl` on production hosts that pull from DigitalOcean Container Registry
 - `git`
 - Access to these repositories:
   - `REPO_SERVER`
   - `REPO_REPORTING`
   - `REPO_ADMIN`
   - `REPO_APP`
+
+---
+
+## Registry Login
+
+Production deploys pull HomSwag images from DigitalOcean Container Registry.
+Log in on the deployment host before running `deploy`, `pull`, or `clean`:
+
+```bash
+doctl auth init
+doctl registry login
+```
+
+If Docker is already logged in to `registry.digitalocean.com`, the deploy script
+will use those credentials. Set `DOCR_SKIP_LOGIN=true` to skip the automatic
+`doctl registry login` refresh.
 
 ---
 
@@ -128,6 +145,11 @@ For production deploys, `.env.prod` sets:
 ```bash
 IMAGE_REGISTRY=registry.digitalocean.com/homswag-repo
 PUSH_REGISTRY=registry.digitalocean.com/homswag-repo
+SERVER_IMAGE=registry.digitalocean.com/homswag-repo/hom-swag-server:latest
+REPORTING_IMAGE=registry.digitalocean.com/homswag-repo/hom-swag-reporting:latest
+ADMIN_IMAGE=registry.digitalocean.com/homswag-repo/hom-swag-admin:latest
+APP_IMAGE=registry.digitalocean.com/homswag-repo/hom-swag-app:latest
+KAFKA_IMAGE=registry.digitalocean.com/homswag-repo/hom-swag-kafka:latest
 ```
 
 ### Deploy existing images

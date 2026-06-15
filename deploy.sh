@@ -153,11 +153,38 @@ DEPLOY_REPLICAS="${DEPLOY_REPLICAS:-2}"
 # Sub-commands
 # =============================================================================
 
+is_docr_registry() {
+    [[ "${IMAGE_REGISTRY:-}" == registry.digitalocean.com/* ]]
+}
+
+ensure_registry_auth() {
+    if ! is_docr_registry; then
+        return
+    fi
+
+    if command -v doctl &>/dev/null && [[ "${DOCR_SKIP_LOGIN:-false}" != "true" ]]; then
+        log "Refreshing DigitalOcean registry credentials with doctl ..."
+        if doctl registry login >/dev/null 2>&1; then
+            ok "DigitalOcean registry credentials refreshed"
+        else
+            warn "doctl registry login failed; continuing with existing Docker credentials"
+        fi
+    else
+        warn "DigitalOcean registry pulls require Docker to be logged in to registry.digitalocean.com"
+    fi
+}
+
 cmd_pull() {
     echo ""
     echo -e "${BOLD}━━━  Pulling images from registry  ━━━${NC}"
     log "Using env file: $ENV_FILE"
-    $COMPOSE pull
+    ensure_registry_auth
+    if ! $COMPOSE pull; then
+        if is_docr_registry; then
+            die "Could not pull from $IMAGE_REGISTRY. Log in on this host with 'doctl registry login' or 'docker login registry.digitalocean.com', then retry."
+        fi
+        die "Image pull failed."
+    fi
     ok "All images up-to-date"
 }
 
@@ -188,10 +215,10 @@ app_image_for() {
     registry="${registry%/}"
 
     case "$service" in
-        server)    echo "${registry}/hom-swag-server:${SERVER_IMAGE_TAG:-latest}" ;;
-        reporting) echo "${registry}/hom-swag-reporting:${REPORTING_IMAGE_TAG:-latest}" ;;
-        admin)     echo "${registry}/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}" ;;
-        app)       echo "${registry}/hom-swag-app:${APP_IMAGE_TAG:-latest}" ;;
+        server)    echo "${SERVER_IMAGE:-${registry}/hom-swag-server:${SERVER_IMAGE_TAG:-latest}}" ;;
+        reporting) echo "${REPORTING_IMAGE:-${registry}/hom-swag-reporting:${REPORTING_IMAGE_TAG:-latest}}" ;;
+        admin)     echo "${ADMIN_IMAGE:-${registry}/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}}" ;;
+        app)       echo "${APP_IMAGE:-${registry}/hom-swag-app:${APP_IMAGE_TAG:-latest}}" ;;
         *)         die "Unknown app service: $service" ;;
     esac
 }
