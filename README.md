@@ -129,6 +129,7 @@ The build script defaults to these registries:
 ```bash
 IMAGE_REGISTRY=docker.io/jeraldvictor
 PUSH_REGISTRY=registry.digitalocean.com/homswag-repo
+BUILD_PLATFORM=linux/amd64
 KAFKA_IMAGE_TAG=latest
 KAFKA_SOURCE_IMAGE=apache/kafka:latest
 KAFKA_PLATFORM=linux/amd64
@@ -136,6 +137,8 @@ KAFKA_PLATFORM=linux/amd64
 
 Override the build/deploy pull source with `IMAGE_REGISTRY`.
 Override the push target with `PUSH_REGISTRY` or `./build-images.sh --push-registry ...`.
+All image builds default to `linux/amd64`; override with `BUILD_PLATFORM` or
+`./build-images.sh --platform ...`.
 Kafka is pulled from `KAFKA_SOURCE_IMAGE`, then tagged as
 `IMAGE_REGISTRY/hom-swag-kafka:KAFKA_IMAGE_TAG`. `KAFKA_PLATFORM` controls
 which platform variant is repacked and pushed.

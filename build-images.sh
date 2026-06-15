@@ -40,7 +40,7 @@ ENV_FILE=""
 TAG_OVERRIDE=""
 PUSH=false
 NO_CACHE=false
-PLATFORM="${BUILD_PLATFORM:-}"
+PLATFORM="${BUILD_PLATFORM:-linux/amd64}"
 SERVICES=()
 
 is_service() {
@@ -322,9 +322,7 @@ build_service() {
 
     local args=(build -f "$SCRIPT_DIR/Containerfile.$service" -t "$image")
 
-    if [[ -n "$PLATFORM" ]]; then
-        args+=(--platform "$PLATFORM")
-    fi
+    args+=(--platform "$PLATFORM")
 
     if [[ "$NO_CACHE" == true ]]; then
         args+=(--no-cache)
@@ -364,6 +362,7 @@ echo -e "${BOLD}╚════════════════════�
 echo -e "  Env file : ${BOLD}${ENV_FILE}${NC}"
 echo -e "  Image registry : ${BOLD}${IMAGE_REGISTRY}${NC}"
 echo -e "  Push registry  : ${BOLD}${PUSH_REGISTRY}${NC}"
+echo -e "  Platform       : ${BOLD}${PLATFORM}${NC}"
 echo -e "  Services : ${BOLD}${SERVICES[*]}${NC}"
 echo -e "  Push     : ${BOLD}${PUSH}${NC}"
 echo ""
