@@ -213,6 +213,27 @@ copy_letsencrypt_cert() {
     cp -L "${source_dir}/privkey.pem" "${target_dir}/privkey.pem"
 }
 
+verify_trusted_cert() {
+    local domain="$1"
+    local certs_path="${NGINX_CERTS_PATH:-./nginx/certs}"
+    [[ "$certs_path" = /* ]] || certs_path="${SCRIPT_DIR}/${certs_path}"
+
+    local cert_file="${certs_path}/${domain}/fullchain.pem"
+    [[ -s "$cert_file" ]] || die "Missing installed certificate for ${domain}"
+
+    local subject issuer
+    subject="$(openssl x509 -in "$cert_file" -noout -subject)"
+    issuer="$(openssl x509 -in "$cert_file" -noout -issuer)"
+
+    if [[ "$subject" == "$issuer" ]]; then
+        die "Installed certificate for ${domain} is self-signed. Check Certbot output and DNS/port 80 reachability."
+    fi
+
+    if ! openssl x509 -in "$cert_file" -noout -checkend 1209600 >/dev/null; then
+        die "Installed certificate for ${domain} expires within 14 days."
+    fi
+}
+
 cmd_certs() {
     echo ""
     echo -e "${BOLD}━━━  Issuing trusted TLS certificates  ━━━${NC}"
@@ -242,6 +263,7 @@ cmd_certs() {
             --keep-until-expiring \
             -d "$domain"
         copy_letsencrypt_cert "$domain"
+        verify_trusted_cert "$domain"
     done
 
     reload_nginx

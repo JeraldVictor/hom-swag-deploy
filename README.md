@@ -109,11 +109,13 @@ all four domains points to the deployment host and port `80` is reachable, then
 run:
 
 ```bash
+./deploy.sh --env prod recreate nginx
 ./deploy.sh --env prod certs
 ```
 
 The command uses the nginx HTTP-01 challenge path, installs the issued
-certificates into `NGINX_CERTS_PATH`, and reloads nginx.
+certificates into `NGINX_CERTS_PATH`, verifies they are not self-signed, and
+reloads nginx.
 
 ---
 

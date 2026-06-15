@@ -22,8 +22,9 @@ upstream homswag_app {
 }
 
 server {
-    listen 80;
-    server_name ${APP_DOMAIN} ${ADMIN_DOMAIN} ${API_DOMAIN} ${REPORTING_DOMAIN};
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
 
     location /.well-known/acme-challenge/ {
         root /var/www/certbot;
