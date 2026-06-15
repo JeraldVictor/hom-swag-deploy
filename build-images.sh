@@ -286,20 +286,18 @@ prepare_context() {
 build_kafka_image() {
     local service="kafka"
     local source_image="${KAFKA_SOURCE_IMAGE:-apache/kafka:latest}"
+    local kafka_platform="${KAFKA_PLATFORM:-${PLATFORM:-linux/amd64}}"
     local image
     local push_image
     image="$(image_name_for "$service")"
     push_image="$(push_image_name_for "$service")"
 
-    local pull_args=(pull)
-    if [[ -n "$PLATFORM" ]]; then
-        pull_args+=(--platform "$PLATFORM")
-    fi
+    local pull_args=(pull --platform "$kafka_platform")
     pull_args+=("$source_image")
 
     echo ""
     echo -e "${BOLD}━━━  Building kafka  ━━━${NC}"
-    log "Pulling $source_image"
+    log "Pulling $source_image for $kafka_platform"
     "$CONTAINER_BIN" "${pull_args[@]}"
     log "Tagging $source_image as $image"
     "$CONTAINER_BIN" tag "$source_image" "$image"

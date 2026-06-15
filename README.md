@@ -110,12 +110,14 @@ IMAGE_REGISTRY=docker.io/jeraldvictor
 PUSH_REGISTRY=registry.digitalocean.com/homswag-repo
 KAFKA_IMAGE_TAG=latest
 KAFKA_SOURCE_IMAGE=apache/kafka:latest
+KAFKA_PLATFORM=linux/amd64
 ```
 
 Override the build/deploy pull source with `IMAGE_REGISTRY`.
 Override the push target with `PUSH_REGISTRY` or `./build-images.sh --push-registry ...`.
 Kafka is pulled from `KAFKA_SOURCE_IMAGE`, then tagged as
-`IMAGE_REGISTRY/hom-swag-kafka:KAFKA_IMAGE_TAG`.
+`IMAGE_REGISTRY/hom-swag-kafka:KAFKA_IMAGE_TAG`. `KAFKA_PLATFORM` controls
+which platform variant is repacked and pushed.
 
 ### Deploy existing images
 
