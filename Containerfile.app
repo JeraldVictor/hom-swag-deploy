@@ -18,11 +18,12 @@ RUN pnpm install --no-frozen-lockfile --ignore-scripts \
 ARG HS_API_URL=http://localhost:3000
 ARG HS_LOGIN_URL=http://localhost:3000
 ARG HS_MEDIA_URL=http://localhost:3000
+ARG HS_BFF_URL=https://api.alpha.homswag.com/bff
 
 # Copy source and build
 COPY repos/app/ .
-RUN printf 'VITE_API_BASE_URL=%s\nVITE_AUTH_API_BASE_URL=%s\nVITE_MEDIA_BASE_URL=%s\nPUBLIC_API_BASE_URL=%s\nMEDIA_BASE_URL=%s\n' \
-        "$HS_API_URL" "$HS_LOGIN_URL" "$HS_MEDIA_URL" "$HS_API_URL" "$HS_MEDIA_URL" > .env.production \
+RUN printf 'VITE_API_BASE_URL=%s\nVITE_AUTH_API_BASE_URL=%s\nVITE_MEDIA_BASE_URL=%s\nVITE_BFF_BASE_URL=%s\nPUBLIC_API_BASE_URL=%s\nMEDIA_BASE_URL=%s\nBFF_BASE_URL=%s\n' \
+        "$HS_API_URL" "$HS_LOGIN_URL" "$HS_MEDIA_URL" "$HS_BFF_URL" "$HS_API_URL" "$HS_MEDIA_URL" "$HS_BFF_URL" > .env.production \
     && pnpm build \
     && rm -f .env.production
 
@@ -36,7 +37,11 @@ COPY --from=builder /app/.output ./.output
 
 EXPOSE 3000
 
+ARG HS_BFF_URL=https://api.alpha.homswag.com/bff
+
 ENV PORT=3000 \
-    NODE_ENV=production
+    NODE_ENV=production \
+    BFF_BASE_URL=$HS_BFF_URL \
+    VITE_BFF_BASE_URL=$HS_BFF_URL
 
 CMD ["node", ".output/server/index.mjs"]

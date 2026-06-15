@@ -334,6 +334,10 @@ build_service() {
         args+=(--build-arg "HS_MEDIA_URL=${VITE_MEDIA_BASE_URL:-${MEDIA_BASE_URL:-http://localhost:${SERVER_PORT:-3000}}}")
     fi
 
+    if [[ "$service" == "app" ]]; then
+        args+=(--build-arg "HS_BFF_URL=${VITE_BFF_BASE_URL:-${BFF_BASE_URL:-${VITE_API_BASE_URL:-http://localhost:${SERVER_PORT:-3000}}/bff}}")
+    fi
+
     if [[ "$service" == "admin" ]]; then
         args+=(--build-arg "HS_REPORTING_URL=${HS_REPORTING_URL:-${VITE_REPORTING_BASE_URL:-${VITE_API_BASE_URL:-http://localhost:${SERVER_PORT:-3000}}}}")
     fi
