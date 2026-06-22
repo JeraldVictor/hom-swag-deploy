@@ -5,10 +5,13 @@ deploy/
 ├── compose.yaml          # Main Docker Compose file defining all services
 ├── deploy.sh             # Orchestration script (pull, up, health, safe-deploy, refresh, logs, shell)
 ├── build-images.sh       # Builds app images and optionally pushes them to the registry
+├── README.md             # Operator-facing deployment notes
 ├── .env.example          # Template for environment variables
 ├── .env.local            # Local development environment configuration
 ├── .env.prod             # Production environment configuration
 ├── Containerfile.*       # Dockerfiles for building images (if needed locally)
+├── nginx/                # Runtime Nginx templates and entrypoint helpers
+├── .build-context/       # Generated build context assets for container builds
 ├── logs/                 # Persistent logs directory (mounted to containers)
 ├── docs/                 # Deployment-specific documentation and reports
 ├── .dockerignore         # Exclusions for Docker build context

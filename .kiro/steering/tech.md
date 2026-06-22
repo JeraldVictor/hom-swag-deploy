@@ -17,6 +17,7 @@
 - **Bash**: 3.2+ (Compatible with macOS and Linux).
 - **cURL**: For health check validations.
 - **grep/sed**: For environment variable parsing and image tag resolution.
+- **Nginx**: Used by frontend containers and deployment templates for serving Admin/App assets and proxy routing.
 
 ## Networking & Security
 
@@ -32,6 +33,7 @@
 - **JWT**: Token-based authentication for Server and BFF.
 - **Kafka**: Internal broker advertised as `kafka:9092`; external local access defaults to `127.0.0.1:9094`.
 - **SSL/TLS**: Handled externally (e.g., Nginx reverse proxy) or via `MINIO_USE_SSL`.
+- **Frontend Runtime Config**: Nginx templates live in `nginx/templates/`; build-time `VITE_*` values still require rebuilding images.
 
 ## Infrastructure Versions
 
