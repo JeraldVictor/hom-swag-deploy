@@ -152,25 +152,17 @@ DEPLOY_REPLICAS="${DEPLOY_REPLICAS:-2}"
 # Sub-commands
 # =============================================================================
 
-is_docr_registry() {
-    [[ "${IMAGE_REGISTRY:-}" == registry.digitalocean.com/* ]]
+is_ghcr_registry() {
+    [[ "${IMAGE_REGISTRY:-}" == ghcr.io/* ]]
 }
 
 ensure_registry_auth() {
-    if ! is_docr_registry; then
+    if ! is_ghcr_registry; then
         return
     fi
 
-    if command -v doctl &>/dev/null && [[ "${DOCR_SKIP_LOGIN:-false}" != "true" ]]; then
-        log "Refreshing DigitalOcean registry credentials with doctl ..."
-        if doctl registry login >/dev/null 2>&1; then
-            ok "DigitalOcean registry credentials refreshed"
-        else
-            warn "doctl registry login failed; continuing with existing Docker credentials"
-        fi
-    else
-        warn "DigitalOcean registry pulls require Docker to be logged in to registry.digitalocean.com"
-    fi
+    warn "GHCR pulls require Docker to be logged in to ghcr.io if packages are private"
+    warn "Use: echo '<github-token>' | docker login ghcr.io -u '<github-user>' --password-stdin"
 }
 
 ensure_nginx_certs() {
@@ -276,8 +268,8 @@ cmd_pull() {
     log "Using env file: $ENV_FILE"
     ensure_registry_auth
     if ! $COMPOSE pull; then
-        if is_docr_registry; then
-            die "Could not pull from $IMAGE_REGISTRY. Log in on this host with 'doctl registry login' or 'docker login registry.digitalocean.com', then retry."
+        if is_ghcr_registry; then
+            die "Could not pull from $IMAGE_REGISTRY. Log in on this host with 'docker login ghcr.io', then retry."
         fi
         die "Image pull failed."
     fi
@@ -306,7 +298,7 @@ cmd_up() {
 
 app_image_for() {
     local service="$1"
-    local registry="${IMAGE_REGISTRY:-docker.io/jeraldvictor}"
+    local registry="${IMAGE_REGISTRY:-ghcr.io/jeraldvictor}"
     registry="${registry%/}"
 
     case "$service" in

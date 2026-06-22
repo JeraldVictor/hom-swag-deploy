@@ -6,8 +6,8 @@ Deployment workspace for running the full HomSwag stack with Podman/Docker Compo
 
 - Uses app sources from `repos/` when present, or from the sibling workspace folders
 - Builds images for `server`, `reporting`, `admin`, `app`, and `kafka`
-- Pulls/deploys production application images from DigitalOcean Container Registry
-- Pushes release images to `registry.digitalocean.com/homswag-repo` only when requested
+- Pulls/deploys production application images from GitHub Container Registry
+- Pushes release images to `ghcr.io/jeraldvictor` only when requested
 - Starts Kafka, nginx, and application containers in production
 - Uses externally managed MongoDB/DocumentDB, Valkey/Redis-protocol cache, and object storage
 - Serves public traffic through the compose-managed `nginx` container with SSL
@@ -19,7 +19,6 @@ Deployment workspace for running the full HomSwag stack with Podman/Docker Compo
 ## Prerequisites
 
 - `podman` (preferred) or `docker`
-- `doctl` on production hosts that pull from DigitalOcean Container Registry
 - `git`
 - Access to these repositories:
   - `REPO_SERVER`
@@ -31,17 +30,16 @@ Deployment workspace for running the full HomSwag stack with Podman/Docker Compo
 
 ## Registry Login
 
-Production deploys pull HomSwag images from DigitalOcean Container Registry.
-Log in on the deployment host before running `deploy`, `pull`, or `clean`:
+Production deploys pull HomSwag images from GitHub Container Registry.
+If the packages are private, log in on the deployment host before running
+`deploy`, `pull`, or `clean`:
 
 ```bash
-doctl auth init
-doctl registry login
+echo "<github-token>" | docker login ghcr.io -u "<github-user>" --password-stdin
 ```
 
-If Docker is already logged in to `registry.digitalocean.com`, the deploy script
-will use those credentials. Set `DOCR_SKIP_LOGIN=true` to skip the automatic
-`doctl registry login` refresh.
+The GitHub token needs package read access for deploys and package write access
+for `build-images.sh --push`.
 
 ---
 
@@ -129,7 +127,7 @@ Build images locally:
 ./build-images.sh --env prod
 ```
 
-Build and push to DigitalOcean Container Registry:
+Build and push to GitHub Container Registry:
 
 ```bash
 ./build-images.sh --env prod --push
@@ -145,8 +143,8 @@ Build selected services:
 The build script defaults to these registries:
 
 ```bash
-IMAGE_REGISTRY=docker.io/jeraldvictor
-PUSH_REGISTRY=registry.digitalocean.com/homswag-repo
+IMAGE_REGISTRY=ghcr.io/jeraldvictor
+PUSH_REGISTRY=ghcr.io/jeraldvictor
 BUILD_PLATFORM=linux/amd64
 KAFKA_IMAGE_TAG=latest
 KAFKA_SOURCE_IMAGE=apache/kafka:latest
@@ -164,13 +162,13 @@ which platform variant is repacked and pushed.
 For production deploys, `.env.prod` sets:
 
 ```bash
-IMAGE_REGISTRY=registry.digitalocean.com/homswag-repo
-PUSH_REGISTRY=registry.digitalocean.com/homswag-repo
-SERVER_IMAGE=registry.digitalocean.com/homswag-repo/hom-swag-server:latest
-REPORTING_IMAGE=registry.digitalocean.com/homswag-repo/hom-swag-reporting:latest
-ADMIN_IMAGE=registry.digitalocean.com/homswag-repo/hom-swag-admin:latest
-APP_IMAGE=registry.digitalocean.com/homswag-repo/hom-swag-app:latest
-KAFKA_IMAGE=registry.digitalocean.com/homswag-repo/hom-swag-kafka:latest
+IMAGE_REGISTRY=ghcr.io/jeraldvictor
+PUSH_REGISTRY=ghcr.io/jeraldvictor
+SERVER_IMAGE=ghcr.io/jeraldvictor/hom-swag-server:latest
+REPORTING_IMAGE=ghcr.io/jeraldvictor/hom-swag-reporting:latest
+ADMIN_IMAGE=ghcr.io/jeraldvictor/hom-swag-admin:latest
+APP_IMAGE=ghcr.io/jeraldvictor/hom-swag-app:latest
+KAFKA_IMAGE=ghcr.io/jeraldvictor/hom-swag-kafka:latest
 ```
 
 ### Deploy existing images

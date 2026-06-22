@@ -4,11 +4,11 @@
 #
 # Usage:
 #   ./build-images.sh                         # build all deployment images locally
-#   ./build-images.sh --push                  # build all deployment images and push to DOCR
+#   ./build-images.sh --push                  # build all deployment images and push to GHCR
 #   ./build-images.sh --env prod --push       # read tags/build args from .env.prod
 #   ./build-images.sh --tag 2026.06.15 --push # use one tag for all services
 #   ./build-images.sh server admin            # build selected services
-#   ./build-images.sh --image-registry docker.io/owner --push-registry registry.digitalocean.com/homswag-repo
+#   ./build-images.sh --image-registry ghcr.io/owner --push-registry ghcr.io/owner
 #
 # Services: server, reporting, admin, app, kafka
 # Builds/tags local images under IMAGE_REGISTRY. Only --push tags and pushes
@@ -32,8 +32,8 @@ ok()   { echo -e "${GREEN}[$(date '+%H:%M:%S')] \u2714${NC}  $*" >&2; }
 warn() { echo -e "${YELLOW}[$(date '+%H:%M:%S')] \u26a0${NC}  $*" >&2; }
 die()  { echo -e "${RED}[$(date '+%H:%M:%S')] \u2718${NC}  $*" >&2; exit 1; }
 
-IMAGE_REGISTRY="${IMAGE_REGISTRY:-docker.io/jeraldvictor}"
-PUSH_REGISTRY="${PUSH_REGISTRY:-registry.digitalocean.com/homswag-repo}"
+IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/jeraldvictor}"
+PUSH_REGISTRY="${PUSH_REGISTRY:-ghcr.io/jeraldvictor}"
 PUSH_REGISTRY_EXPLICIT=false
 ENV_PROFILE="${DEPLOY_ENV:-local}"
 ENV_FILE=""
@@ -55,6 +55,19 @@ is_infra_service() {
         mongodb|redis|minio|mongo-express) return 0 ;;
         *) return 1 ;;
     esac
+}
+
+is_ghcr_push_registry() {
+    [[ "${PUSH_REGISTRY:-}" == ghcr.io/* ]]
+}
+
+ensure_push_registry_auth() {
+    if [[ "$PUSH" != true ]] || ! is_ghcr_push_registry; then
+        return
+    fi
+
+    warn "GHCR pushes require Docker to be logged in to ghcr.io with a token that can write packages"
+    warn "Use: echo '<github-token>' | docker login ghcr.io -u '<github-user>' --password-stdin"
 }
 
 while [[ "$#" -gt 0 ]]; do
@@ -165,7 +178,7 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < "$ENV_FILE"
 
 if [[ "$PUSH_REGISTRY_EXPLICIT" == false ]]; then
-    PUSH_REGISTRY="${PUSH_REGISTRY:-registry.digitalocean.com/homswag-repo}"
+    PUSH_REGISTRY="${PUSH_REGISTRY:-ghcr.io/jeraldvictor}"
 fi
 IMAGE_REGISTRY="${IMAGE_REGISTRY%/}"
 PUSH_REGISTRY="${PUSH_REGISTRY%/}"
@@ -323,6 +336,7 @@ build_service() {
     local args=(build -f "$SCRIPT_DIR/Containerfile.$service" -t "$image")
 
     args+=(--platform "$PLATFORM")
+    args+=(--provenance=false --sbom=false)
 
     if [[ "$NO_CACHE" == true ]]; then
         args+=(--no-cache)
@@ -370,6 +384,8 @@ echo -e "  Platform       : ${BOLD}${PLATFORM}${NC}"
 echo -e "  Services : ${BOLD}${SERVICES[*]}${NC}"
 echo -e "  Push     : ${BOLD}${PUSH}${NC}"
 echo ""
+
+ensure_push_registry_auth
 
 CONTEXT_DIR="$(prepare_context)"
 

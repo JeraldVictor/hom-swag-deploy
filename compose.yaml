@@ -9,7 +9,7 @@ services:
   # ────────────────────────────────────────────────────────────────
 
   server:
-    image: ${SERVER_IMAGE:-docker.io/jeraldvictor/hom-swag-server:latest}
+    image: ${SERVER_IMAGE:-ghcr.io/jeraldvictor/hom-swag-server:latest}
     pull_policy: always
     restart: unless-stopped
     expose:
@@ -34,7 +34,7 @@ services:
       - homswag-net
 
   reporting:
-    image: ${REPORTING_IMAGE:-docker.io/jeraldvictor/hom-swag-reporting:latest}
+    image: ${REPORTING_IMAGE:-ghcr.io/jeraldvictor/hom-swag-reporting:latest}
     pull_policy: always
     restart: unless-stopped
     expose:
@@ -58,7 +58,7 @@ services:
       - homswag-net
 
   kafka:
-    image: ${KAFKA_IMAGE:-docker.io/jeraldvictor/hom-swag-kafka:latest}
+    image: ${KAFKA_IMAGE:-ghcr.io/jeraldvictor/hom-swag-kafka:latest}
     container_name: homswag-kafka
     restart: unless-stopped
     ports:
@@ -84,7 +84,7 @@ services:
       - homswag-net
 
   admin:
-    image: ${ADMIN_IMAGE:-docker.io/jeraldvictor/hom-swag-admin:latest}
+    image: ${ADMIN_IMAGE:-ghcr.io/jeraldvictor/hom-swag-admin:latest}
     pull_policy: always
     restart: unless-stopped
     expose:
@@ -93,7 +93,7 @@ services:
       - homswag-net
 
   app:
-    image: ${APP_IMAGE:-docker.io/jeraldvictor/hom-swag-app:latest}
+    image: ${APP_IMAGE:-ghcr.io/jeraldvictor/hom-swag-app:latest}
     pull_policy: always
     restart: unless-stopped
     expose:
