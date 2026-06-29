@@ -17,10 +17,10 @@ RUN pnpm install --no-frozen-lockfile --ignore-scripts \
 COPY repos/admin/ .
 
 # Build-time URLs (baked into the static bundle by Vite)
-ARG HS_API_URL=http://localhost:3000
-ARG HS_LOGIN_URL=http://localhost:3000
-ARG HS_MEDIA_URL=http://localhost:3000
-ARG HS_REPORTING_URL=http://localhost:3000
+ARG HS_API_URL=https://api.alpha.homswag.com
+ARG HS_LOGIN_URL=https://api.alpha.homswag.com
+ARG HS_MEDIA_URL=https://api.alpha.homswag.com
+ARG HS_REPORTING_URL=https://reporting.alpha.homswag.com
 
 # Give Node enough heap for large bundles; skip unnecessary network ops at build time
 ENV NODE_OPTIONS="--max-old-space-size=4096" \
@@ -30,8 +30,9 @@ ENV NODE_OPTIONS="--max-old-space-size=4096" \
 # Skip type-check in the container (CI should own that); just build the bundle
 RUN printf 'VITE_API_BASE_URL=%s\nVITE_AUTH_API_BASE_URL=%s\nVITE_MEDIA_BASE_URL=%s\nVITE_REPORTING_BASE_URL=%s\nPUBLIC_API_BASE_URL=%s\nMEDIA_BASE_URL=%s\n' \
         "$HS_API_URL" "$HS_LOGIN_URL" "$HS_MEDIA_URL" "$HS_REPORTING_URL" "$HS_API_URL" "$HS_MEDIA_URL" > .env.production \
+    && cp .env.production .env.prod \
     && pnpm run build \
-    && rm -f .env.production
+    && rm -f .env.production .env.prod
 
 # ── Stage 2: Serve with nginx ─────────────────────────────────────────────────
 FROM nginx:alpine AS runner

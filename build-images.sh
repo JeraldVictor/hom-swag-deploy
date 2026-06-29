@@ -6,6 +6,7 @@
 #   ./build-images.sh                         # build all deployment images locally
 #   ./build-images.sh --push                  # build all deployment images and push to GHCR
 #   ./build-images.sh --env prod --push       # read tags/build args from .env.prod
+#   ./build-images.sh --env prod --no-cache --push # clean rebuild production images and push
 #   ./build-images.sh --tag 2026.06.15 --push # use one tag for all services
 #   ./build-images.sh server admin            # build selected services
 #   ./build-images.sh --image-registry ghcr.io/owner --push-registry ghcr.io/owner
@@ -68,6 +69,177 @@ ensure_push_registry_auth() {
 
     warn "GHCR pushes require Docker to be logged in to ghcr.io with a token that can write packages"
     warn "Use: echo '<github-token>' | docker login ghcr.io -u '<github-user>' --password-stdin"
+}
+
+is_prod_profile() {
+    [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]
+}
+
+is_local_url() {
+    local value="${1:-}"
+    [[ "$value" =~ ^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:|/|$) ]]
+}
+
+require_prod_url() {
+    local name="$1"
+    local value="${2:-}"
+    if ! is_prod_profile; then
+        return
+    fi
+    [[ -n "$value" ]] || die "$name is required for production image builds"
+    if is_local_url "$value"; then
+        die "$name resolves to local URL '$value' during a production image build"
+    fi
+}
+
+frontend_api_url() {
+    local api_url="${VITE_API_BASE_URL:-}"
+    if ! is_prod_profile; then
+        api_url="${api_url:-http://localhost:${SERVER_PORT:-3000}}"
+    fi
+    echo "$api_url"
+}
+
+frontend_login_url() {
+    local api_url
+    api_url="$(frontend_api_url)"
+    local login_url="${VITE_AUTH_API_BASE_URL:-$api_url}"
+    if ! is_prod_profile; then
+        login_url="${login_url:-$api_url}"
+    fi
+    echo "$login_url"
+}
+
+frontend_media_url() {
+    local api_url
+    api_url="$(frontend_api_url)"
+    local media_url="${VITE_MEDIA_BASE_URL:-${MEDIA_BASE_URL:-$api_url}}"
+    if ! is_prod_profile; then
+        media_url="${media_url:-$api_url}"
+    fi
+    echo "$media_url"
+}
+
+frontend_bff_url() {
+    local bff_url="${VITE_BFF_BASE_URL:-${BFF_BASE_URL:-}}"
+    if [[ -z "$bff_url" && -n "${VITE_API_BASE_URL:-}" ]]; then
+        bff_url="${VITE_API_BASE_URL%/}/bff"
+    fi
+    if ! is_prod_profile; then
+        bff_url="${bff_url:-http://localhost:${SERVER_PORT:-3000}/bff}"
+    fi
+    echo "$bff_url"
+}
+
+frontend_reporting_url() {
+    local reporting_url="${HS_REPORTING_URL:-${VITE_REPORTING_BASE_URL:-}}"
+    if ! is_prod_profile; then
+        reporting_url="${reporting_url:-${VITE_API_BASE_URL:-http://localhost:${SERVER_PORT:-3000}}}"
+    fi
+    echo "$reporting_url"
+}
+
+print_resolved_env() {
+    local api_url login_url media_url bff_url reporting_url customer_app_url
+    api_url="$(frontend_api_url)"
+    login_url="$(frontend_login_url)"
+    media_url="$(frontend_media_url)"
+    bff_url="$(frontend_bff_url)"
+    reporting_url="$(frontend_reporting_url)"
+    customer_app_url="${VITE_CUSTOMER_APP_URL:-}"
+
+    require_prod_url VITE_API_BASE_URL "$api_url"
+    require_prod_url VITE_AUTH_API_BASE_URL "$login_url"
+    require_prod_url VITE_MEDIA_BASE_URL "$media_url"
+    require_prod_url VITE_BFF_BASE_URL "$bff_url"
+    require_prod_url VITE_REPORTING_BASE_URL "$reporting_url"
+    require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
+
+    echo -e "${BOLD}Resolved build env:${NC}"
+    echo -e "  NODE_ENV              : ${BOLD}${NODE_ENV:-unset}${NC}"
+    echo -e "  APP_URL               : ${BOLD}${APP_URL:-unset}${NC}"
+    echo -e "  VITE_API_BASE_URL     : ${BOLD}${api_url}${NC}"
+    echo -e "  VITE_AUTH_API_BASE_URL: ${BOLD}${login_url}${NC}"
+    echo -e "  VITE_MEDIA_BASE_URL   : ${BOLD}${media_url}${NC}"
+    echo -e "  VITE_BFF_BASE_URL     : ${BOLD}${bff_url}${NC}"
+    echo -e "  VITE_REPORTING_BASE_URL: ${BOLD}${reporting_url}${NC}"
+    echo -e "  VITE_CUSTOMER_APP_URL : ${BOLD}${customer_app_url:-unset}${NC}"
+    echo -e "  SERVER_IMAGE_TAG      : ${BOLD}${SERVER_IMAGE_TAG:-latest}${NC}"
+    echo -e "  REPORTING_IMAGE_TAG   : ${BOLD}${REPORTING_IMAGE_TAG:-latest}${NC}"
+    echo -e "  ADMIN_IMAGE_TAG       : ${BOLD}${ADMIN_IMAGE_TAG:-latest}${NC}"
+    echo -e "  APP_IMAGE_TAG         : ${BOLD}${APP_IMAGE_TAG:-latest}${NC}"
+    echo -e "  KAFKA_IMAGE_TAG       : ${BOLD}${KAFKA_IMAGE_TAG:-latest}${NC}"
+    echo -e "  NO_CACHE              : ${BOLD}${NO_CACHE}${NC}"
+    echo ""
+}
+
+write_frontend_env_files() {
+    local service="$1"
+    local target_dir="$2"
+
+    case "$service" in
+        app)
+            local api_url login_url media_url bff_url
+            api_url="$(frontend_api_url)"
+            login_url="$(frontend_login_url)"
+            media_url="$(frontend_media_url)"
+            bff_url="$(frontend_bff_url)"
+
+            require_prod_url VITE_API_BASE_URL "$api_url"
+            require_prod_url VITE_AUTH_API_BASE_URL "$login_url"
+            require_prod_url VITE_MEDIA_BASE_URL "$media_url"
+            require_prod_url VITE_BFF_BASE_URL "$bff_url"
+
+            cat > "$target_dir/.env.prod" <<EOF
+VITE_API_BASE_URL=$api_url
+VITE_AUTH_API_BASE_URL=$login_url
+VITE_MEDIA_BASE_URL=$media_url
+PUBLIC_API_BASE_URL=$api_url
+MEDIA_BASE_URL=$media_url
+BFF_BASE_URL=$bff_url
+VITE_BFF_BASE_URL=$bff_url
+EOF
+            cp "$target_dir/.env.prod" "$target_dir/.env.production"
+            ;;
+        admin)
+            local api_url login_url media_url reporting_url
+            api_url="$(frontend_api_url)"
+            login_url="$(frontend_login_url)"
+            media_url="$(frontend_media_url)"
+            reporting_url="$(frontend_reporting_url)"
+            local customer_app_url="${VITE_CUSTOMER_APP_URL:-}"
+
+            require_prod_url VITE_API_BASE_URL "$api_url"
+            require_prod_url VITE_AUTH_API_BASE_URL "$login_url"
+            require_prod_url VITE_MEDIA_BASE_URL "$media_url"
+            require_prod_url VITE_REPORTING_BASE_URL "$reporting_url"
+            require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
+
+            cat > "$target_dir/.env.prod" <<EOF
+VITE_API_BASE_URL=$api_url
+VITE_AUTH_API_BASE_URL=$login_url
+VITE_MEDIA_BASE_URL=$media_url
+VITE_REPORTING_BASE_URL=$reporting_url
+PUBLIC_API_BASE_URL=$api_url
+MEDIA_BASE_URL=$media_url
+VITE_CUSTOMER_APP_URL=$customer_app_url
+EOF
+            cp "$target_dir/.env.prod" "$target_dir/.env.production"
+            ;;
+        server)
+            if is_prod_profile; then
+                cat > "$target_dir/.env.prod" <<EOF
+NODE_ENV=${NODE_ENV:-production}
+PORT=${PORT:-3000}
+HOST=${HOST:-0.0.0.0}
+APP_URL=${APP_URL:-}
+CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+ENABLE_SWAGGER=${ENABLE_SWAGGER:-false}
+ERROR_INCLUDE_STACK=${ERROR_INCLUDE_STACK:-false}
+EOF
+            fi
+            ;;
+    esac
 }
 
 while [[ "$#" -gt 0 ]]; do
@@ -287,6 +459,7 @@ prepare_context() {
         source="$(require_source "$service")"
         log "Preparing $service source from $source"
         sync_source "$source" "$context_dir/repos/$service"
+        write_frontend_env_files "$service" "$context_dir/repos/$service"
     done
 
     if [[ -d "$SCRIPT_DIR/nginx" ]]; then
@@ -343,17 +516,32 @@ build_service() {
     fi
 
     if [[ "$service" == "admin" || "$service" == "app" ]]; then
-        args+=(--build-arg "HS_API_URL=${VITE_API_BASE_URL:-http://localhost:${SERVER_PORT:-3000}}")
-        args+=(--build-arg "HS_LOGIN_URL=${VITE_AUTH_API_BASE_URL:-${VITE_API_BASE_URL:-http://localhost:${SERVER_PORT:-3000}}}")
-        args+=(--build-arg "HS_MEDIA_URL=${VITE_MEDIA_BASE_URL:-${MEDIA_BASE_URL:-http://localhost:${SERVER_PORT:-3000}}}")
+        local api_url login_url media_url
+        api_url="$(frontend_api_url)"
+        login_url="$(frontend_login_url)"
+        media_url="$(frontend_media_url)"
+
+        require_prod_url VITE_API_BASE_URL "$api_url"
+        require_prod_url VITE_AUTH_API_BASE_URL "$login_url"
+        require_prod_url VITE_MEDIA_BASE_URL "$media_url"
+
+        args+=(--build-arg "HS_API_URL=$api_url")
+        args+=(--build-arg "HS_LOGIN_URL=$login_url")
+        args+=(--build-arg "HS_MEDIA_URL=$media_url")
     fi
 
     if [[ "$service" == "app" ]]; then
-        args+=(--build-arg "HS_BFF_URL=${VITE_BFF_BASE_URL:-${BFF_BASE_URL:-${VITE_API_BASE_URL:-http://localhost:${SERVER_PORT:-3000}}/bff}}")
+        local bff_url
+        bff_url="$(frontend_bff_url)"
+        require_prod_url VITE_BFF_BASE_URL "$bff_url"
+        args+=(--build-arg "HS_BFF_URL=$bff_url")
     fi
 
     if [[ "$service" == "admin" ]]; then
-        args+=(--build-arg "HS_REPORTING_URL=${HS_REPORTING_URL:-${VITE_REPORTING_BASE_URL:-${VITE_API_BASE_URL:-http://localhost:${SERVER_PORT:-3000}}}}")
+        local reporting_url
+        reporting_url="$(frontend_reporting_url)"
+        require_prod_url VITE_REPORTING_BASE_URL "$reporting_url"
+        args+=(--build-arg "HS_REPORTING_URL=$reporting_url")
     fi
 
     args+=("$context_dir")
@@ -384,6 +572,7 @@ echo -e "  Platform       : ${BOLD}${PLATFORM}${NC}"
 echo -e "  Services : ${BOLD}${SERVICES[*]}${NC}"
 echo -e "  Push     : ${BOLD}${PUSH}${NC}"
 echo ""
+print_resolved_env
 
 ensure_push_registry_auth
 

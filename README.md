@@ -133,6 +133,12 @@ Build and push to GitHub Container Registry:
 ./build-images.sh --env prod --push
 ```
 
+Clean rebuild and push production images:
+
+```bash
+./build-images.sh --env prod --no-cache --push
+```
+
 Build selected services:
 
 ```bash
@@ -158,6 +164,11 @@ All image builds default to `linux/amd64`; override with `BUILD_PLATFORM` or
 Kafka is pulled from `KAFKA_SOURCE_IMAGE`, then tagged as
 `IMAGE_REGISTRY/hom-swag-kafka:KAFKA_IMAGE_TAG`. `KAFKA_PLATFORM` controls
 which platform variant is repacked and pushed.
+
+Before building, `build-images.sh` logs the resolved build environment,
+including the frontend URLs baked into the `admin` and `app` images. For
+production builds, the script refuses to continue if a required frontend URL is
+missing or points to `localhost`, `127.0.0.1`, or `0.0.0.0`.
 
 For production deploys, `.env.prod` sets:
 

@@ -15,17 +15,18 @@ RUN pnpm install --no-frozen-lockfile --ignore-scripts \
     && pnpm rebuild esbuild
 
 # Build-time URLs (available to Vite/TanStack build)
-ARG HS_API_URL=http://localhost:3000
-ARG HS_LOGIN_URL=http://localhost:3000
-ARG HS_MEDIA_URL=http://localhost:3000
+ARG HS_API_URL=https://api.alpha.homswag.com
+ARG HS_LOGIN_URL=https://api.alpha.homswag.com
+ARG HS_MEDIA_URL=https://api.alpha.homswag.com
 ARG HS_BFF_URL=https://api.alpha.homswag.com/bff
 
 # Copy source and build
 COPY repos/app/ .
 RUN printf 'VITE_API_BASE_URL=%s\nVITE_AUTH_API_BASE_URL=%s\nVITE_MEDIA_BASE_URL=%s\nVITE_BFF_BASE_URL=%s\nPUBLIC_API_BASE_URL=%s\nMEDIA_BASE_URL=%s\nBFF_BASE_URL=%s\n' \
         "$HS_API_URL" "$HS_LOGIN_URL" "$HS_MEDIA_URL" "$HS_BFF_URL" "$HS_API_URL" "$HS_MEDIA_URL" "$HS_BFF_URL" > .env.production \
+    && cp .env.production .env.prod \
     && pnpm build \
-    && rm -f .env.production
+    && rm -f .env.production .env.prod
 
 # ── Stage 2: Runtime ──────────────────────────────────────────────────────────
 FROM node:22-alpine AS runner
