@@ -538,10 +538,13 @@ build_service() {
     fi
 
     if [[ "$service" == "admin" ]]; then
-        local reporting_url
+        local reporting_url customer_app_url
         reporting_url="$(frontend_reporting_url)"
+        customer_app_url="${VITE_CUSTOMER_APP_URL:-}"
         require_prod_url VITE_REPORTING_BASE_URL "$reporting_url"
+        require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
         args+=(--build-arg "HS_REPORTING_URL=$reporting_url")
+        args+=(--build-arg "HS_CUSTOMER_APP_URL=$customer_app_url")
     fi
 
     args+=("$context_dir")
