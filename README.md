@@ -200,8 +200,9 @@ will ignore them when determining which services to act on.
 ```
 
 Production deploy is graceful: it pulls images, scales app services up behind
-nginx, verifies the SSL routes, removes old-image containers, and settles back
-to the configured replica counts.
+nginx, verifies the new-image containers directly from the nginx network,
+verifies the public SSL routes, removes old-image containers one service at a
+time, and settles back to the configured replica counts.
 
 ```bash
 SERVER_REPLICAS=1
@@ -211,10 +212,17 @@ APP_REPLICAS=1
 DEPLOY_REPLICAS=2
 ```
 
+`DEPLOY_REPLICAS` is treated as a minimum total during the temporary scale-up.
+If a service normally runs more than one replica, the deploy script scales to at
+least double the normal replica count so it can prove the replacement set is
+healthy before removing the old containers.
+
 ### Clean deploy
 
 Clean deploy removes the compose stack first, pulls fresh images, starts from
-scratch, validates health, then prunes old images.
+scratch, validates health, then prunes old images. This is intentionally
+disruptive; use `./deploy.sh --env prod deploy` for the graceful production
+path.
 
 ```bash
 ./deploy.sh --env prod clean
@@ -283,6 +291,16 @@ If Kafka is deployed as a separately managed service, set `KAFKA_BOOTSTRAP_SERVE
 and `KAFKA_BROKERS` to that service DNS name.
 
 ### Operations
+
+For production application releases, prefer:
+
+```bash
+./deploy.sh --env prod deploy
+```
+
+`clean`, `down`, `recreate`, and `refresh` stop or force-recreate containers and
+can cause downtime for public app services. Use them for maintenance windows,
+infrastructure-only changes, or targeted recovery.
 
 ```bash
 ./deploy.sh --env prod restart app

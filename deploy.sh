@@ -320,13 +320,25 @@ replicas_for() {
     esac
 }
 
+health_target_for() {
+    case "$1" in
+        server)    echo "3000 /health" ;;
+        reporting) echo "3000 /health" ;;
+        admin)     echo "80 /" ;;
+        app)       echo "3000 /" ;;
+        *)         die "Unknown app service: $1" ;;
+    esac
+}
+
 deploy_replicas_for() {
     local normal
+    local minimum
     normal="$(replicas_for "$1")"
-    if [[ "$DEPLOY_REPLICAS" -gt "$normal" ]]; then
+    minimum=$(( normal * 2 ))
+    if [[ "$DEPLOY_REPLICAS" -gt "$minimum" ]]; then
         echo "$DEPLOY_REPLICAS"
     else
-        echo $(( normal + 1 ))
+        echo "$minimum"
     fi
 }
 
@@ -381,15 +393,96 @@ remove_outdated_service_containers() {
     $COMPOSE up -d --no-recreate --scale "$service=$desired" "$service"
 }
 
+container_ip() {
+    docker inspect "$1" --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+}
+
+container_name() {
+    docker inspect "$1" --format '{{.Name}}' | sed 's#^/##'
+}
+
+probe_container_from_nginx() {
+    local cid="$1"
+    local port="$2"
+    local path="$3"
+    local ip
+    ip="$(container_ip "$cid")"
+    [[ -n "$ip" ]] || return 1
+
+    $COMPOSE exec -T nginx wget -q -O /dev/null --timeout=5 "http://${ip}:${port}${path}" >/dev/null 2>&1
+}
+
+wait_for_new_service_containers() {
+    local service="$1"
+    local image="$2"
+    local desired="$3"
+    local max_wait="${HEALTH_TIMEOUT:-90}"
+    local interval=5
+    local elapsed=0
+    local new_image_id
+    local target
+    local port
+    local path
+
+    new_image_id="$(docker image inspect "$image" --format '{{.Id}}')" || die "Unable to inspect pulled image: $image"
+    target="$(health_target_for "$service")"
+    port="${target%% *}"
+    path="${target#* }"
+
+    log "Waiting for $desired new $service container(s) to pass direct health checks ..."
+    while [[ "$elapsed" -lt "$max_wait" ]]; do
+        local healthy=0
+        local cid
+        for cid in $($COMPOSE ps -q "$service"); do
+            local container_image_id
+            local running
+            container_image_id="$(docker inspect "$cid" --format '{{.Image}}')"
+            running="$(docker inspect "$cid" --format '{{.State.Running}}')"
+            if [[ "$container_image_id" == "$new_image_id" && "$running" == "true" ]]; then
+                if probe_container_from_nginx "$cid" "$port" "$path"; then
+                    healthy=$(( healthy + 1 ))
+                fi
+            fi
+        done
+
+        if [[ "$healthy" -ge "$desired" ]]; then
+            ok "$service has $healthy healthy new-image container(s)."
+            return
+        fi
+
+        sleep "$interval"
+        elapsed=$(( elapsed + interval ))
+    done
+
+    warn "$service new-image containers did not become healthy within ${max_wait}s"
+    local cid
+    for cid in $($COMPOSE ps -q "$service"); do
+        local container_image_id
+        container_image_id="$(docker inspect "$cid" --format '{{.Image}}')"
+        if [[ "$container_image_id" == "$new_image_id" ]]; then
+            warn "New $service container still unhealthy: $(container_name "$cid") ($cid)"
+        fi
+    done
+    exit 1
+}
+
+wait_for_new_app_containers() {
+    local service
+    for service in server reporting admin app; do
+        wait_for_new_service_containers "$service" "$(app_image_for "$service")" "$(replicas_for "$service")"
+    done
+}
+
 # ---------------------------------------------------------------------------
 # cmd_safe_deploy — graceful production deployment
 #
 # Flow:
 #   1. Pull new images while live containers keep serving traffic.
 #   2. Scale app services up behind nginx using the newly pulled images.
-#   3. Validate the public nginx/SSL routes.
-#   4. Remove containers still running old image IDs.
-#   5. Settle services back to their configured replica counts.
+#   3. Validate the new-image containers directly through the nginx network.
+#   4. Validate the public nginx/SSL routes.
+#   5. Remove containers still running old image IDs.
+#   6. Settle services back to their configured replica counts.
 # ---------------------------------------------------------------------------
 cmd_safe_deploy() {
     cmd_pull
@@ -421,6 +514,7 @@ cmd_safe_deploy() {
         server reporting admin app nginx
     reload_nginx
 
+    wait_for_new_app_containers
     cmd_health
 
     echo ""
@@ -428,6 +522,8 @@ cmd_safe_deploy() {
     local service
     for service in server reporting admin app; do
         remove_outdated_service_containers "$service" "$(app_image_for "$service")" "$(replicas_for "$service")"
+        reload_nginx
+        wait_for_new_service_containers "$service" "$(app_image_for "$service")" "$(replicas_for "$service")"
     done
     $COMPOSE up -d --no-recreate --remove-orphans \
         --scale server="$SERVER_REPLICAS" \
