@@ -159,6 +159,7 @@ http://localhost:3000/health           # API server
 http://localhost:5173                  # admin
 http://localhost:8080                  # customer app
 http://localhost:3003/health           # reporting service
+mongodb://admin:dummypass@localhost:27018/homswag?authSource=admin
 http://localhost:9101                  # MinIO console
 ```
 

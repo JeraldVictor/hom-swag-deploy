@@ -6,7 +6,7 @@ services:
     image: ${MONGODB_IMAGE:-docker.io/mongo:8}
     restart: unless-stopped
     ports:
-      - "${MONGO_HOST_PORT:-${MONGO_PORT:-27017}}:27017"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${MONGO_HOST_PORT:-${MONGO_PORT:-27017}}:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-changeme}
@@ -26,7 +26,7 @@ services:
     restart: unless-stopped
     command: ["sh", "-c", "redis-server --appendonly yes --requirepass \"$${REDIS_PASSWORD}\""]
     ports:
-      - "${REDIS_HOST_PORT:-${REDIS_PORT:-6379}}:6379"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${REDIS_HOST_PORT:-${REDIS_PORT:-6379}}:6379"
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-changeme}
     volumes:
@@ -44,8 +44,8 @@ services:
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     ports:
-      - "${MINIO_HOST_PORT:-${MINIO_PORT:-9000}}:9000"
-      - "${MINIO_CONSOLE_HOST_PORT:-${MINIO_CONSOLE_PORT:-9001}}:9001"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${MINIO_HOST_PORT:-${MINIO_PORT:-9000}}:9000"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${MINIO_CONSOLE_HOST_PORT:-${MINIO_CONSOLE_PORT:-9001}}:9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
@@ -78,6 +78,8 @@ services:
       - homswag-net
 
   kafka:
+    ports: !override
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${KAFKA_PORT:-9094}:9094"
     volumes:
       - ${KAFKA_DATA_SOURCE:-./volume-data/kafka}:/var/lib/kafka/data
       - ${KAFKA_SHARED_CONFIG_SOURCE:-./volume-data/kafka-shared-config}:/mnt/shared/config

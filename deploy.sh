@@ -684,10 +684,33 @@ cmd_health() {
     echo ""
     if [[ "$all_ok" == true ]]; then
         ok "All services are healthy."
+        cleanup_completed_local_jobs
     else
         warn "One or more services failed health checks. Run './deploy.sh logs' to investigate."
         exit 1
     fi
+}
+
+cleanup_completed_local_jobs() {
+    if [[ "$ENV_PROFILE" != "local" ]]; then
+        return
+    fi
+
+    local svc
+    for svc in minio-init; do
+        local cid
+        cid="$($COMPOSE ps -a -q "$svc" 2>/dev/null || true)"
+        [[ -n "$cid" ]] || continue
+
+        local state
+        local exit_code
+        state="$(docker inspect "$cid" --format '{{.State.Status}}' 2>/dev/null || true)"
+        exit_code="$(docker inspect "$cid" --format '{{.State.ExitCode}}' 2>/dev/null || true)"
+        if [[ "$state" == "exited" && "$exit_code" == "0" ]]; then
+            log "Removing completed local job container: $svc"
+            $COMPOSE rm -f "$svc" >/dev/null 2>&1 || true
+        fi
+    done
 }
 
 cmd_restart() {
