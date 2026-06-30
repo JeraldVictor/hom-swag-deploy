@@ -1,0 +1,106 @@
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - ${env:OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_APP}
+            - ${env:OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_ADMIN}
+            - http://localhost:8080
+            - http://localhost:5173
+            - http://localhost:8088
+          allowed_headers:
+            - "*"
+
+  fluentforward:
+    endpoint: 0.0.0.0:24224
+
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
+    api_version: "1.40"
+    collection_interval: 15s
+    timeout: 5s
+
+processors:
+  memory_limiter:
+    check_interval: 2s
+    limit_mib: 256
+    spike_limit_mib: 64
+
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: ${env:DEPLOYMENT_ENVIRONMENT}
+        action: upsert
+      - key: service.namespace
+        value: homswag
+        action: upsert
+
+  transform/docker_logs:
+    error_mode: ignore
+    log_statements:
+      - context: log
+        statements:
+          - set(log.body, log.attributes["log"]) where log.attributes["log"] != nil
+          - set(resource.attributes["service.name"], log.attributes["container_name"]) where log.attributes["container_name"] != nil
+          - set(resource.attributes["container.name"], log.attributes["container_name"]) where log.attributes["container_name"] != nil
+          - set(resource.attributes["container.id"], log.attributes["container_id"]) where log.attributes["container_id"] != nil
+          - set(log.attributes["docker.stream"], log.attributes["source"]) where log.attributes["source"] != nil
+          - set(log.severity_text, "ERROR") where log.attributes["source"] == "stderr"
+          - set(log.severity_text, "INFO") where log.severity_text == nil
+          - set(log.severity_text, "INFO") where log.severity_text == ""
+          - delete_key(log.attributes, "log")
+
+  batch:
+    timeout: 1s
+    send_batch_size: 1024
+
+exporters:
+  otlp/signoz:
+    endpoint: signoz:4317
+    tls:
+      insecure: true
+
+service:
+  extensions:
+    - health_check
+  pipelines:
+    traces:
+      receivers:
+        - otlp
+      processors:
+        - memory_limiter
+        - resource
+        - batch
+      exporters:
+        - otlp/signoz
+
+    metrics:
+      receivers:
+        - otlp
+        - docker_stats
+      processors:
+        - memory_limiter
+        - resource
+        - batch
+      exporters:
+        - otlp/signoz
+
+    logs:
+      receivers:
+        - otlp
+        - fluentforward
+      processors:
+        - memory_limiter
+        - transform/docker_logs
+        - resource
+        - batch
+      exporters:
+        - otlp/signoz

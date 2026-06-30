@@ -3,6 +3,7 @@ repos/
 data/
 volume-data/
 .build-context/
+secrets/
 
 # Runtime secrets
 .env

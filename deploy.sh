@@ -122,7 +122,21 @@ done < "$ENV_FILE"
 
 # ── Discover compose binary ────────────────────────────────────────────────────
 if command -v docker &>/dev/null; then
-    COMPOSE_BIN="docker compose"
+    if docker info >/tmp/homswag-docker-info.log 2>&1; then
+        COMPOSE_BIN="docker compose"
+    else
+        if grep -qiE "permission denied|cannot connect|connection to the Docker daemon" /tmp/homswag-docker-info.log; then
+            warn "Docker CLI is installed but the Docker daemon/socket is not reachable."
+            if command -v podman &>/dev/null; then
+                warn "Falling back to podman compose."
+                COMPOSE_BIN="podman compose"
+            else
+                die "Start Docker Desktop (or make sure your Docker daemon is running) and retry."
+            fi
+        else
+            die "Docker is installed but not usable: $(tr '\n' ' ' < /tmp/homswag-docker-info.log | head -c 200)"
+        fi
+    fi
 elif command -v podman &>/dev/null; then
     warn "docker not found — falling back to podman compose"
     COMPOSE_BIN="podman compose"
@@ -311,11 +325,15 @@ cmd_up() {
         echo -e "  ${BOLD}Reporting${NC}-> http://localhost:${REPORTING_PORT}"
         echo -e "  ${BOLD}Admin${NC}    -> http://localhost:${ADMIN_PORT}"
         echo -e "  ${BOLD}App${NC}      -> http://localhost:${APP_PORT}"
+        echo -e "  ${BOLD}SigNoz${NC}   -> http://localhost:${SIGNOZ_HTTP_PORT:-9080}"
+        echo -e "  ${BOLD}Portainer${NC}-> https://localhost:${PORTAINER_HTTPS_PORT:-9443} (UI), http://localhost:${PORTAINER_HTTP_PORT:-8000} (agent)"
     else
         echo -e "  ${BOLD}API${NC}      -> https://${API_DOMAIN}"
         echo -e "  ${BOLD}Reporting${NC}-> https://${REPORTING_DOMAIN}"
         echo -e "  ${BOLD}Admin${NC}    -> https://${ADMIN_DOMAIN}"
         echo -e "  ${BOLD}App${NC}      -> https://${APP_DOMAIN}"
+        echo -e "  ${BOLD}SigNoz${NC}   -> https://<host>:${SIGNOZ_HTTP_PORT:-8080}"
+        echo -e "  ${BOLD}Portainer${NC}-> https://<host>:${PORTAINER_HTTPS_PORT:-9443}"
     fi
     echo ""
 }
@@ -611,9 +629,9 @@ cmd_health() {
     local all_ok=true
 
     # Parallel arrays — avoids associative arrays (bash 3.2 on macOS)
-    local svcs=("server" "reporting" "admin" "app")
-    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN")
-    local paths=("/health" "/health" "/health" "/")
+    local svcs=("server" "reporting" "admin" "app" "signoz" "portainer" "otel-collector")
+    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$API_DOMAIN" "$API_DOMAIN" "$API_DOMAIN")
+    local paths=("/health" "/health" "/health" "/" "/" "/" "/")
 
     local i
     for i in "${!svcs[@]}"; do
@@ -625,6 +643,12 @@ cmd_health() {
         local url
         if [[ "$svc" == "minio" ]]; then
             url="http://localhost:${MINIO_PORT:-9000}${path}"
+        elif [[ "$svc" == "signoz" ]]; then
+            url="http://localhost:${SIGNOZ_HTTP_PORT:-8080}${path}"
+        elif [[ "$svc" == "otel-collector" ]]; then
+            url="http://localhost:${OTEL_COLLECTOR_HEALTH_PORT:-13133}${path}"
+        elif [[ "$svc" == "portainer" ]]; then
+            url="https://localhost:${PORTAINER_HTTPS_PORT:-9443}${path}"
         elif [[ "$ENV_PROFILE" == "local" ]]; then
             scheme="http"
             case "$svc" in
@@ -640,14 +664,30 @@ cmd_health() {
         local svc_ok=false
         local elapsed=0
         local last_server_health_response=""
+        local fallback_url=""
+        local check_url="$url"
+        local target_message="$url"
+        local successful_url="$url"
+        if [[ "$svc" == "portainer" ]]; then
+            check_url="https://localhost:${PORTAINER_HTTPS_PORT:-9443}${path}"
+            fallback_url="http://localhost:${PORTAINER_HTTP_PORT:-8000}${path}"
+            target_message="$check_url (then $fallback_url)"
+        fi
 
-        log "Waiting for $svc at $url (timeout: ${max_wait}s) ..."
+        log "Waiting for $svc at ${target_message} (timeout: ${max_wait}s) ..."
         while [[ "$elapsed" -lt "$max_wait" ]]; do
             local http_code
             local tmp_body
 
             tmp_body=$(mktemp /tmp/health_XXXXXX)
-            if [[ "$svc" == "minio" || "$ENV_PROFILE" == "local" ]]; then
+            if [[ "$svc" == "portainer" ]]; then
+                http_code=$(curl -k -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$check_url" || echo "000")
+                successful_url="$check_url"
+                if [[ "$http_code" != "200" && "$http_code" != "301" && "$http_code" != "302" && "$http_code" != "307" && "$http_code" != "308" ]]; then
+                    http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$fallback_url" || echo "000")
+                    successful_url="$fallback_url"
+                fi
+            elif [[ "$svc" == "minio" || "$svc" == "signoz" || "$svc" == "otel-collector" || "$ENV_PROFILE" == "local" ]]; then
                 http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$url" || echo "000")
             else
                 http_code=$(curl -k -s -o "$tmp_body" -w "%{http_code}" --max-time 5 --resolve "${domain}:${port}:127.0.0.1" "$url" || echo "000")
@@ -661,8 +701,8 @@ cmd_health() {
             fi
             rm -f "$tmp_body"
 
-            if [[ "$http_code" == "200" ]]; then
-                ok "$svc is up  ($url)"
+            if [[ "$http_code" == "200" || "$http_code" == "301" || "$http_code" == "302" || "$http_code" == "307" || "$http_code" == "308" ]]; then
+                ok "$svc is up  ($successful_url)"
                 svc_ok=true
                 break
             fi
@@ -670,12 +710,12 @@ cmd_health() {
             elapsed=$(( elapsed + interval ))
         done
 
-        if [[ "$svc_ok" == false ]]; then
+            if [[ "$svc_ok" == false ]]; then
             if [[ "$svc" == "server" && -n "$last_server_health_response" ]]; then
                 print_server_health_response "$last_server_health_response"
                 warn "$svc health did not become healthy at $url within ${max_wait}s"
             else
-                warn "$svc did NOT respond at $url within ${max_wait}s"
+                warn "$svc did NOT respond at ${target_message} within ${max_wait}s"
             fi
             all_ok=false
         fi
@@ -696,6 +736,7 @@ cleanup_completed_local_jobs() {
         return
     fi
 
+    local runtime="${COMPOSE_BIN%% *}"
     local svc
     for svc in minio-init; do
         local cid
@@ -704,8 +745,8 @@ cleanup_completed_local_jobs() {
 
         local state
         local exit_code
-        state="$(docker inspect "$cid" --format '{{.State.Status}}' 2>/dev/null || true)"
-        exit_code="$(docker inspect "$cid" --format '{{.State.ExitCode}}' 2>/dev/null || true)"
+        state="$($runtime inspect "$cid" --format '{{.State.Status}}' 2>/dev/null || true)"
+        exit_code="$($runtime inspect "$cid" --format '{{.State.ExitCode}}' 2>/dev/null || true)"
         if [[ "$state" == "exited" && "$exit_code" == "0" ]]; then
             log "Removing completed local job container: $svc"
             $COMPOSE rm -f "$svc" >/dev/null 2>&1 || true

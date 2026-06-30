@@ -209,6 +209,10 @@ write_frontend_env_files() {
 VITE_API_BASE_URL=$api_url
 VITE_AUTH_API_BASE_URL=$login_url
 VITE_MEDIA_BASE_URL=$media_url
+VITE_ENABLE_RUM=${VITE_ENABLE_RUM:-false}
+VITE_RUM_TRACES_ENDPOINT=${VITE_RUM_TRACES_ENDPOINT:-}
+VITE_RUM_SERVICE_NAME=${VITE_APP_RUM_SERVICE_NAME:-customer-app}
+VITE_DEPLOYMENT_ENVIRONMENT=${VITE_DEPLOYMENT_ENVIRONMENT:-${DEPLOYMENT_ENVIRONMENT:-production}}
 PUBLIC_API_BASE_URL=$api_url
 MEDIA_BASE_URL=$media_url
 BFF_BASE_URL=$server_bff
@@ -235,6 +239,10 @@ VITE_API_BASE_URL=$api_url
 VITE_AUTH_API_BASE_URL=$login_url
 VITE_MEDIA_BASE_URL=$media_url
 VITE_REPORTING_BASE_URL=$reporting_url
+VITE_ENABLE_RUM=${VITE_ENABLE_RUM:-false}
+VITE_RUM_TRACES_ENDPOINT=${VITE_RUM_TRACES_ENDPOINT:-}
+VITE_RUM_SERVICE_NAME=${VITE_ADMIN_RUM_SERVICE_NAME:-admin-app}
+VITE_DEPLOYMENT_ENVIRONMENT=${VITE_DEPLOYMENT_ENVIRONMENT:-${DEPLOYMENT_ENVIRONMENT:-production}}
 PUBLIC_API_BASE_URL=$api_url
 MEDIA_BASE_URL=$media_url
 VITE_CUSTOMER_APP_URL=$customer_app_url
@@ -551,6 +559,9 @@ build_service() {
         args+=(--build-arg "HS_API_URL=$api_url")
         args+=(--build-arg "HS_LOGIN_URL=$login_url")
         args+=(--build-arg "HS_MEDIA_URL=$media_url")
+        args+=(--build-arg "HS_ENABLE_RUM=${VITE_ENABLE_RUM:-false}")
+        args+=(--build-arg "HS_RUM_TRACES_ENDPOINT=${VITE_RUM_TRACES_ENDPOINT:-}")
+        args+=(--build-arg "HS_DEPLOYMENT_ENVIRONMENT=${VITE_DEPLOYMENT_ENVIRONMENT:-${DEPLOYMENT_ENVIRONMENT:-production}}")
     fi
 
     if [[ "$service" == "app" ]]; then
@@ -561,6 +572,7 @@ build_service() {
         require_prod_url BFF_BASE_URL "$server_bff"
         args+=(--build-arg "HS_BFF_URL=$bff_url")
         args+=(--build-arg "HS_SERVER_BFF_URL=$server_bff")
+        args+=(--build-arg "HS_RUM_SERVICE_NAME=${VITE_APP_RUM_SERVICE_NAME:-customer-app}")
     fi
 
     if [[ "$service" == "admin" ]]; then
@@ -571,6 +583,7 @@ build_service() {
         require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
         args+=(--build-arg "HS_REPORTING_URL=$reporting_url")
         args+=(--build-arg "HS_CUSTOMER_APP_URL=$customer_app_url")
+        args+=(--build-arg "HS_RUM_SERVICE_NAME=${VITE_ADMIN_RUM_SERVICE_NAME:-admin-app}")
     fi
 
     args+=("$context_dir")

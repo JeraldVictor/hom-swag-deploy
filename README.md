@@ -152,6 +152,29 @@ Use this flow for local testing with local images and direct localhost ports:
 ./deploy.sh --env local status
 ```
 
+### Common local startup error
+
+If you see:
+
+```text
+permission denied while trying to connect to the docker API at unix:///Users/.../.docker/run/docker.sock
+```
+
+run this first:
+
+```bash
+open -a Docker
+```
+
+Then retry:
+
+```bash
+./deploy.sh --env local clean
+```
+
+(On Linux, this usually means your user is not authorized for `/var/run/docker.sock`; ask your admin to add your user to the `docker` group.)
+```
+
 Local URLs:
 
 ```bash
@@ -159,6 +182,8 @@ http://localhost:3000/health           # API server
 http://localhost:5173                  # admin
 http://localhost:8080                  # customer app
 http://localhost:3003/health           # reporting service
+http://localhost:9080                  # SigNoz UI
+http://localhost:9443                  # Portainer UI
 mongodb://admin:dummypass@localhost:27018/homswag?authSource=admin
 http://localhost:9101                  # MinIO console
 ```
@@ -259,6 +284,172 @@ Production safety rules:
 - Push is allowed only for production profile with `.env.prod`.
 - Prefer `./deploy.sh --env prod deploy` for normal PROD rollout; it performs
   the graceful scale-up, health validation, and old-container removal flow.
+
+### Observability + Operations
+
+We run two services for logs and operations in both local and production:
+
+- **SigNoz** (`signoz`): OTEL backend for logs/traces/metrics query and retention.
+- **SigNoz retention worker** (`signoz-retention`): enforces the local/prod
+  telemetry retention policy against SigNoz ClickHouse.
+- **OpenTelemetry Collector** (`otel-collector`): receives Docker stdout/stderr
+  via Docker's Fluentd logging driver, receives OTLP, collects Docker metrics,
+  and exports everything to SigNoz.
+- **Portainer** (`portainer`): Docker stack/container management and quick operational control.
+
+Configured defaults:
+
+```bash
+# .env.local
+ENABLE_OTEL=true
+OTEL_ENDPOINT=http://otel-collector:4318
+OTEL_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
+OTEL_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+DOCKER_LOG_FLUENTD_ADDRESS=127.0.0.1:24224
+OTEL_COLLECTOR_FORWARD_PORT=24224
+SIGNOZ_HTTP_PORT=9080
+PORTAINER_HTTPS_PORT=9443
+SIGNOZ_RETENTION_DAYS=7
+SIGNOZ_MAX_BYTES=5368709120
+
+# .env.prod
+ENABLE_OTEL=true
+OTEL_ENDPOINT=http://otel-collector:4318
+OTEL_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
+OTEL_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
+DOCKER_LOG_FLUENTD_ADDRESS=127.0.0.1:24224
+OTEL_COLLECTOR_FORWARD_PORT=24224
+SIGNOZ_HTTP_PORT=8080
+PORTAINER_HTTPS_PORT=9443
+SIGNOZ_RETENTION_DAYS=7
+SIGNOZ_MAX_BYTES=5368709120
+```
+
+Local access:
+
+- SigNoz: `http://localhost:9080`
+- Portainer: `https://localhost:9443`
+
+Production access (if ports are exposed):
+
+- SigNoz: `http://<host>:8080`
+- Portainer: `https://<host>:9443`
+
+If you want to keep these off public internet in prod, terminate them with your
+firewall/reverse-proxy rules or do not expose the ports in your env.
+
+Browser RUM collection uses the existing API domain and is intentionally limited
+to the traces endpoint:
+
+```bash
+https://api.alpha.homswag.com/otel/v1/traces
+```
+
+Nginx proxies only `/otel/v1/traces` to `otel-collector:4318/v1/traces`.
+Other `/otel/*` paths return `404`, so logs and generic OTLP ingestion are not
+opened publicly. Server and reporting telemetry continue to use the internal
+Docker network endpoint `http://otel-collector:4318`.
+
+### Full UI + Login for SigNoz & Portainer
+
+For an immediate full UI experience with authentication, set these values before
+first boot:
+
+```bash
+# SigNoz
+SIGNOZ_USER_ROOT_ENABLED=true
+SIGNOZ_USER_ROOT_ORG_NAME=hom-swag
+SIGNOZ_USER_ROOT_EMAIL=admin@homswag.local
+SIGNOZ_USER_ROOT_PASSWORD=change-this-root-password-strong
+```
+
+```bash
+# Portainer
+# The Portainer CE image can start shell-less in some variants.
+# We therefore use the default entrypoint (recommended for stability).
+```
+Use the first-run wizard to create your Portainer admin user on first startup.
+
+- SigNoz login:
+  - Open `http://localhost:9080` (local) / `http://<host>:8080` (production when exposed)
+  - Sign in with the root user created above.
+  - Logs Explorer:
+    - Use `Last 30 minutes`, then refresh.
+    - Filter `deployment.environment = development` for local or `production` for prod.
+    - App OTEL logs show as `service.name = api-server`.
+    - Browser RUM traces show as `service.name = customer-app` and
+      `service.name = admin-app` after the frontend images are rebuilt with
+      `VITE_ENABLE_RUM=true`.
+    - Kafka Messaging Queue data appears only after instrumented producer or
+      consumer code sends Kafka spans. A healthy Kafka container by itself will
+      not populate that page.
+    - Docker stdout/stderr logs show as container service names like `/deploy-server-1`,
+      `/deploy-admin-1`, `/deploy-app-1`, `/homswag-local-nginx`.
+    - Server logs intentionally appear in both places: clean app logs under `api-server`
+      and raw container stdout under `/deploy-server-1`.
+  - Full feature checklist (click and validate):
+    - Traces → Service Map, Dependencies, Trace to Logs, Filters/Tags, and Saved Views
+    - Logs → Log Explorer, Advanced Query, Saved Views, Saved Search, and Alerts
+    - Metrics → Explore, dashboards, anomaly detection, and alert rules
+    - Dashboards → Dashboard gallery, Explore panels, and custom widgets
+    - Alerts → Alert templates, evaluation windows, channel setup, and alert status views
+    - Settings → Users, data source health, authentication settings
+
+- Portainer login:
+  - Open `https://localhost:9443`
+  - Finish the first-run setup wizard and create the initial admin user.
+  - If you already created admin through your own bootstrap process, use that account.
+  - Full feature checklist:
+    - Endpoints → add/validate local Docker endpoint
+    - Containers → start/stop/restart, logs, exec, stats, container actions
+    - Stacks/compose → stack list, deploy/update, rollback, recreate
+    - Images, Volumes, Networks → browse, prune, remove, inspect
+    - Templates → community/template view + custom template import
+    - Access control → admin user, teams, endpoint access, owner/operator roles
+    - Monitoring → live resource graph, events, host/resource views
+
+Helpful one-liners for quick verification:
+
+```bash
+curl -s http://localhost:9080 | head -n 1
+curl -k -s https://localhost:9443 | head -n 1
+curl -s http://localhost:13133
+./deploy.sh --env local health
+```
+
+### Log cleanup / retention
+
+There are two types of logs in this stack:
+
+- **SigNoz logs:** app OTEL logs plus Docker stdout/stderr logs exported by
+  `otel-collector`.
+- **Collector local logs:** only the collector itself uses Docker `json-file`
+  rotation so it can still be debugged if the logging pipeline is down.
+
+For collector local logs we keep bounded Docker rotation:
+
+```bash
+DOCKER_LOG_MAX_SIZE=20m
+DOCKER_LOG_MAX_FILE=30
+```
+
+SigNoz data retention is enforced by the `signoz-retention` sidecar. It connects
+to the ClickHouse instance inside `signoz` and applies the same policy to logs,
+traces, metrics, meter samples, usage rows, and SigNoz helper/resource tables:
+
+```bash
+SIGNOZ_RETENTION_DAYS=7
+SIGNOZ_MAX_BYTES=5368709120
+SIGNOZ_RETENTION_INTERVAL_SECONDS=3600
+SIGNOZ_RETENTION_TRIM_STEP_SECONDS=21600
+SIGNOZ_RETENTION_MUTATIONS_SYNC=1
+```
+
+The worker always deletes telemetry older than 7 days. If active SigNoz
+ClickHouse telemetry still exceeds 5GB after that, it trims the oldest data in
+six-hour steps until the active telemetry data is under the cap. Docker service
+containers use the Fluentd logging driver, so they do not keep long-lived
+per-container JSON log files.
 
 ### Build and push release images
 
@@ -498,6 +689,9 @@ openssl rand -hex 32
 - MongoDB: `27017`
 - Redis: `6379`
 - Kafka external listener: `9094`
+- SigNoz UI: `8080` (local host bind uses `9080` by default)
+- SigNoz OTLP gRPC/HTTP: `4317` / `4318`
+- Portainer: `8000` / `9443`
 
 ---
 

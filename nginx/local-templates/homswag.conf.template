@@ -1,8 +1,17 @@
 resolver 127.0.0.11 valid=10s ipv6=off;
+access_log /dev/stdout;
+error_log /dev/stderr warn;
 
 map $http_upgrade $connection_upgrade {
     default upgrade;
     '' close;
+}
+
+map $http_origin $otel_cors_origin {
+    default "";
+    "http://localhost:8080" $http_origin;
+    "http://localhost:5173" $http_origin;
+    "http://localhost:8088" $http_origin;
 }
 
 upstream homswag_server {
@@ -19,6 +28,10 @@ upstream homswag_admin {
 
 upstream homswag_app {
     server app:3000;
+}
+
+upstream homswag_otel_collector {
+    server otel-collector:4318;
 }
 
 server {
@@ -55,6 +68,31 @@ server {
     server_name ${API_DOMAIN};
 
     client_max_body_size 50m;
+
+    location = /otel/v1/traces {
+        if ($request_method = OPTIONS) {
+            add_header Access-Control-Allow-Origin $otel_cors_origin always;
+            add_header Access-Control-Allow-Methods "POST, OPTIONS" always;
+            add_header Access-Control-Allow-Headers "content-type,traceparent,tracestate,baggage" always;
+            add_header Access-Control-Max-Age 86400 always;
+            add_header Vary Origin always;
+            return 204;
+        }
+
+        rewrite ^/otel/(.*)$ /$1 break;
+        proxy_pass http://homswag_otel_collector;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto http;
+        add_header Access-Control-Allow-Origin $otel_cors_origin always;
+        add_header Vary Origin always;
+    }
+
+    location /otel/ {
+        return 404;
+    }
 
     location / {
         proxy_pass http://homswag_server;
