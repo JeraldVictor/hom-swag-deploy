@@ -162,6 +162,11 @@ http://localhost:3003/health           # reporting service
 http://localhost:9101                  # MinIO console
 ```
 
+Local container data is bind-mounted under `deploy/volume-data/` and ignored by
+git. This includes MongoDB, Redis, MinIO, Kafka, nginx cache, server uploads,
+and server logs. `./deploy.sh --env local down` keeps that data; remove
+`deploy/volume-data/` only when you want a fully clean local state.
+
 Useful local operations:
 
 ```bash

@@ -11,8 +11,8 @@ services:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER:-admin}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:-changeme}
     volumes:
-      - ${MONGODB_DATA_SOURCE:-mongodb-data}:/data/db
-      - mongodb-config:/data/configdb
+      - ${MONGODB_DATA_SOURCE:-./volume-data/mongodb}:/data/db
+      - ${MONGODB_CONFIG_SOURCE:-./volume-data/mongodb-config}:/data/configdb
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval 'db.adminCommand(\"ping\").ok' || exit 1"]
       interval: 10s
@@ -30,7 +30,7 @@ services:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD:-changeme}
     volumes:
-      - ${REDIS_DATA_SOURCE:-redis-data}:/data
+      - ${REDIS_DATA_SOURCE:-./volume-data/redis}:/data
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
       interval: 10s
@@ -50,7 +50,7 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     volumes:
-      - ${MINIO_DATA_SOURCE:-minio-data}:/data
+      - ${MINIO_DATA_SOURCE:-./volume-data/minio}:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://127.0.0.1:9000/minio/health/live"]
       interval: 10s
@@ -76,6 +76,12 @@ services:
         mc mb --ignore-existing "local/$$MINIO_BUCKET"
     networks:
       - homswag-net
+
+  kafka:
+    volumes:
+      - ${KAFKA_DATA_SOURCE:-./volume-data/kafka}:/var/lib/kafka/data
+      - ${KAFKA_SHARED_CONFIG_SOURCE:-./volume-data/kafka-shared-config}:/mnt/shared/config
+      - ${KAFKA_SECRETS_SOURCE:-./volume-data/kafka-secrets}:/etc/kafka/secrets
 
   server:
     env_file:
@@ -120,11 +126,4 @@ services:
   nginx:
     ports: !override []
     volumes:
-      - type: tmpfs
-        target: /var/cache/nginx
-
-volumes:
-  mongodb-data:
-  mongodb-config:
-  redis-data:
-  minio-data:
+      - ${NGINX_CACHE_SOURCE:-./volume-data/nginx-cache}:/var/cache/nginx

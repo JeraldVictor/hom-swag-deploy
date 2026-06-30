@@ -700,13 +700,19 @@ cmd_restart() {
 # Force-recreate one or all services without pulling new images
 cmd_recreate() {
     local svcs=("$@")
-    ensure_nginx_certs
+    if [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]; then
+        ensure_nginx_certs
+    fi
     if [[ "${#svcs[@]}" -gt 0 ]]; then
         log "Force-recreating service(s): ${svcs[*]} ..."
     else
         log "Force-recreating all services ..."
     fi
-    $COMPOSE up -d --force-recreate "${svcs[@]}"
+    if [[ "${#svcs[@]}" -gt 0 ]]; then
+        $COMPOSE up -d --force-recreate "${svcs[@]}"
+    else
+        $COMPOSE up -d --force-recreate
+    fi
     ok "Done"
     $COMPOSE ps
 }
@@ -714,7 +720,9 @@ cmd_recreate() {
 # Pull latest image(s) then force-recreate — scoped to one or all services
 cmd_refresh() {
     local svcs=("$@")
-    ensure_nginx_certs
+    if [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]; then
+        ensure_nginx_certs
+    fi
     if [[ "${#svcs[@]}" -gt 0 ]]; then
         log "Refreshing service(s): ${svcs[*]} ..."
         $COMPOSE pull "${svcs[@]}"
