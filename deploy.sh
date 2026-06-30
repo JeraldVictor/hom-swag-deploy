@@ -3,7 +3,7 @@
 # HomSwag — Deploy script (image-based — no git pull, no local build)
 #
 # Usage:
-#   ./deploy.sh                      # pull images from registry + start all services
+#   ./deploy.sh                      # production deploy: pull images from registry + start all services
 #   ./deploy.sh prod                 # use .env.prod and deploy (shorthand for --env prod)
 #   ./deploy.sh --env prod           # same as above (explicit flag form)
 #   ./deploy.sh prod logs [svc...]   # any sub-command can be prefixed with prod|local
@@ -19,6 +19,7 @@
 #   ./deploy.sh dump <svc>           # print last 100 lines (no follow)
 #   ./deploy.sh logs-all <svc>       # print ALL logs for a service
 #   ./deploy.sh shell <svc>          # open interactive terminal in container
+#   ./deploy.sh exec <svc> -- <cmd>  # run a one-off command in container
 #   ./deploy.sh status               # show running containers
 #   ./deploy.sh health               # validate service HTTP endpoints
 #   ./deploy.sh certs                # issue/renew trusted Let's Encrypt TLS certs
@@ -42,14 +43,14 @@ warn() { echo -e "${YELLOW}[$(date '+%H:%M:%S')] \u26a0${NC}  $*"; }
 die()  { echo -e "${RED}[$(date '+%H:%M:%S')] \u2718${NC}  $*" >&2; exit 1; }
 
 # ── Parse global flags ─────────────────────────────────────────────────────────
-ENV_PROFILE="${DEPLOY_ENV:-local}"
+ENV_PROFILE="${DEPLOY_ENV:-prod}"
 COMMAND=""
 REMAINING_ARGS=()
 UNKNOWN_ARGS=()
 
 is_command() {
     case "$1" in
-        deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|certs|seed|seed-reports)
+        deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|certs|seed|seed-reports)
             return 0 ;;
         *)
             return 1 ;;
@@ -86,7 +87,7 @@ for ((i = 0; i < ${#ARGS[@]}; i++)); do
 done
 
 if [[ "${#UNKNOWN_ARGS[@]}" -gt 0 && -z "$COMMAND" ]]; then
-    die "Unknown command '${UNKNOWN_ARGS[0]}'. Use: ${0} [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|certs|seed|seed-reports}"
+    die "Unknown command '${UNKNOWN_ARGS[0]}'. Use: ${0} [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|certs|seed|seed-reports}"
 fi
 
 if [[ -z "$COMMAND" ]]; then
@@ -129,7 +130,13 @@ else
     die "Neither docker nor podman found. Please install one of them."
 fi
 
-COMPOSE="$COMPOSE_BIN --env-file $ENV_FILE -f compose.yaml"
+COMPOSE_FILES="-f compose.yaml"
+if [[ "$ENV_PROFILE" == "local" ]]; then
+    [[ -f "compose.local.yaml" ]] || die "compose.local.yaml not found. Local deploy requires the local compose override."
+    COMPOSE_FILES="$COMPOSE_FILES -f compose.local.yaml"
+fi
+
+COMPOSE="$COMPOSE_BIN --env-file $ENV_FILE $COMPOSE_FILES"
 
 # ── Port defaults (overridden by env file if set) ──────────────────────────────
 SERVER_PORT="${SERVER_PORT:-3000}"
@@ -266,6 +273,10 @@ cmd_pull() {
     echo ""
     echo -e "${BOLD}━━━  Pulling images from registry  ━━━${NC}"
     log "Using env file: $ENV_FILE"
+    if [[ "${PULL_IMAGES:-true}" != "true" ]]; then
+        warn "Skipping image pull because PULL_IMAGES=${PULL_IMAGES:-false}"
+        return
+    fi
     ensure_registry_auth
     if ! $COMPOSE pull; then
         if is_ghcr_registry; then
@@ -279,20 +290,33 @@ cmd_pull() {
 cmd_up() {
     echo ""
     echo -e "${BOLD}━━━  Starting services  ━━━${NC}"
-    ensure_nginx_certs
+    if [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]; then
+        ensure_nginx_certs
+    fi
     $COMPOSE up -d --remove-orphans \
         --scale server="$SERVER_REPLICAS" \
         --scale reporting="$REPORTING_REPLICAS" \
         --scale admin="$ADMIN_REPLICAS" \
         --scale app="$APP_REPLICAS"
+    if [[ "$ENV_PROFILE" == "local" ]]; then
+        $COMPOSE up -d --force-recreate nginx
+    fi
+    reload_nginx
     echo ""
     ok "Containers started:"
     $COMPOSE ps
     echo ""
-    echo -e "  ${BOLD}API${NC}      -> https://${API_DOMAIN}"
-    echo -e "  ${BOLD}Reporting${NC}-> https://${REPORTING_DOMAIN}"
-    echo -e "  ${BOLD}Admin${NC}    -> https://${ADMIN_DOMAIN}"
-    echo -e "  ${BOLD}App${NC}      -> https://${APP_DOMAIN}"
+    if [[ "$ENV_PROFILE" == "local" ]]; then
+        echo -e "  ${BOLD}API${NC}      -> http://localhost:${SERVER_PORT}"
+        echo -e "  ${BOLD}Reporting${NC}-> http://localhost:${REPORTING_PORT}"
+        echo -e "  ${BOLD}Admin${NC}    -> http://localhost:${ADMIN_PORT}"
+        echo -e "  ${BOLD}App${NC}      -> http://localhost:${APP_PORT}"
+    else
+        echo -e "  ${BOLD}API${NC}      -> https://${API_DOMAIN}"
+        echo -e "  ${BOLD}Reporting${NC}-> https://${REPORTING_DOMAIN}"
+        echo -e "  ${BOLD}Admin${NC}    -> https://${ADMIN_DOMAIN}"
+        echo -e "  ${BOLD}App${NC}      -> https://${APP_DOMAIN}"
+    fi
     echo ""
 }
 
@@ -370,6 +394,27 @@ reload_nginx() {
     if $COMPOSE ps -q nginx 2>/dev/null | grep -q .; then
         log "Reloading nginx ..."
         $COMPOSE exec -T nginx nginx -s reload >/dev/null 2>&1 || warn "nginx reload failed; container restart may still pick up config."
+    fi
+}
+
+should_prune_images() {
+    local default_prune="false"
+    if [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]; then
+        default_prune="true"
+    fi
+
+    case "${PRUNE_AFTER_DEPLOY:-$default_prune}" in
+        true|1|yes|on) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+prune_images_after_deploy() {
+    if should_prune_images; then
+        log "Pruning dangling images ..."
+        docker image prune -f
+    else
+        log "Skipping image prune (PRUNE_AFTER_DEPLOY=${PRUNE_AFTER_DEPLOY:-auto})"
     fi
 }
 
@@ -491,8 +536,7 @@ cmd_safe_deploy() {
         log "No existing stack detected — performing standard deploy"
         cmd_up
         cmd_health
-        log "Pruning dangling images ..."
-        docker image prune -f
+        prune_images_after_deploy
         ok "Deploy complete."
         return
     fi
@@ -534,8 +578,7 @@ cmd_safe_deploy() {
     reload_nginx
     cmd_health
 
-    log "Pruning dangling images ..."
-    docker image prune -f
+    prune_images_after_deploy
     ok "Graceful deploy complete."
 }
 
@@ -553,9 +596,8 @@ cmd_deploy() {
         cmd_pull
         cmd_up
         cmd_health
-        # New stack is confirmed healthy — prune dangling/old images
-        log "Pruning dangling images ..."
-        docker image prune -f
+        # New stack is confirmed healthy before optional image cleanup.
+        prune_images_after_deploy
         ok "Deploy complete."
     fi
 }
@@ -578,11 +620,22 @@ cmd_health() {
         local svc="${svcs[$i]}"
         local domain="${domains[$i]}"
         local path="${paths[$i]}"
+        local scheme="https"
+        local port="$NGINX_HTTPS_PORT"
         local url
         if [[ "$svc" == "minio" ]]; then
             url="http://localhost:${MINIO_PORT:-9000}${path}"
+        elif [[ "$ENV_PROFILE" == "local" ]]; then
+            scheme="http"
+            case "$svc" in
+                server)    port="$SERVER_PORT" ;;
+                reporting) port="$REPORTING_PORT" ;;
+                admin)     port="$ADMIN_PORT" ;;
+                app)       port="$APP_PORT" ;;
+            esac
+            url="${scheme}://localhost:${port}${path}"
         else
-            url="https://${domain}:${NGINX_HTTPS_PORT}${path}"
+            url="${scheme}://${domain}:${port}${path}"
         fi
         local svc_ok=false
         local elapsed=0
@@ -594,10 +647,10 @@ cmd_health() {
             local tmp_body
 
             tmp_body=$(mktemp /tmp/health_XXXXXX)
-            if [[ "$svc" == "minio" ]]; then
+            if [[ "$svc" == "minio" || "$ENV_PROFILE" == "local" ]]; then
                 http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$url" || echo "000")
             else
-                http_code=$(curl -k -s -o "$tmp_body" -w "%{http_code}" --max-time 5 --resolve "${domain}:${NGINX_HTTPS_PORT}:127.0.0.1" "$url" || echo "000")
+                http_code=$(curl -k -s -o "$tmp_body" -w "%{http_code}" --max-time 5 --resolve "${domain}:${port}:127.0.0.1" "$url" || echo "000")
             fi
             if [[ "$svc" == "server" && "$http_code" != "000" ]]; then
                 local response
@@ -696,8 +749,7 @@ cmd_clean() {
     cmd_pull
     cmd_up
     cmd_health
-    log "Pruning dangling images ..."
-    docker image prune -f
+    prune_images_after_deploy
     ok "Clean deploy complete."
 }
 
@@ -746,6 +798,18 @@ cmd_shell() {
     $COMPOSE exec "$svc" sh -c 'which bash > /dev/null 2>&1 && exec bash || exec sh'
 }
 
+cmd_exec() {
+    local svc="${1:-}"
+    [[ -n "$svc" ]] || die "Usage: ./deploy.sh exec <service> -- <command...>"
+    shift || true
+    if [[ "${1:-}" == "--" ]]; then
+        shift
+    fi
+    [[ "$#" -gt 0 ]] || die "Usage: ./deploy.sh exec <service> -- <command...>"
+    log "Running in compose service '$svc': $*"
+    $COMPOSE exec "$svc" "$@"
+}
+
 cmd_status() {
     $COMPOSE ps
 }
@@ -780,6 +844,7 @@ case "$COMMAND" in
     dump)       cmd_logs_dump "$@"     ;;
     logs-all)   cmd_logs_all  "$@"     ;;
     shell)      cmd_shell     "$@"     ;;
+    exec)       cmd_exec      "$@"     ;;
     status)     cmd_status             ;;
     health)     cmd_health             ;;
     certs)      cmd_certs              ;;
@@ -787,7 +852,7 @@ case "$COMMAND" in
     seed-reports) cmd_seed_reports     ;;
     *)
         echo ""
-        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|certs|seed|seed-reports}"
+        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|certs|seed|seed-reports}"
         echo ""
         echo "  deploy    Pull images then start all services (default)"
         echo "  pull      Pull latest images from the configured registry only"
@@ -802,6 +867,7 @@ case "$COMMAND" in
         echo "  dump      Print last 100 lines, no follow (e.g. ./deploy.sh dump app)"
         echo "  logs-all  Print ALL logs for a service   (e.g. ./deploy.sh logs-all server)"
         echo "  shell     Open terminal in container     (e.g. ./deploy.sh shell server)"
+        echo "  exec      Run command in container       (e.g. ./deploy.sh exec server -- pnpm seed:prod -- --upsert)"
         echo "  status    Show running containers"
         echo "  health    Validate service HTTP endpoints"
         echo "  certs     Issue/renew trusted Let's Encrypt TLS certificates"

@@ -7,7 +7,7 @@ data/
 .env
 .env.prod
 
-./nginx/certs/*
+nginx/certs/
 
 # OS
 .DS_Store

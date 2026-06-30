@@ -10,7 +10,7 @@ services:
 
   server:
     image: ${SERVER_IMAGE:-ghcr.io/jeraldvictor/hom-swag-server:latest}
-    pull_policy: always
+    pull_policy: ${SERVER_PULL_POLICY:-always}
     restart: unless-stopped
     expose:
       - "3000"
@@ -22,9 +22,9 @@ services:
       REPORTING_EVENT_TOPIC: ${REPORTING_EVENT_TOPIC:-homswag.reporting.events}
       REPORTING_EVENTS_CONSUMER_GROUP: ${REPORTING_EVENTS_CONSUMER_GROUP:-homswag-server-reporting-events}
     env_file:
-      - ${DEPLOY_ENV_FILE:-.env.local}
+      - ${DEPLOY_ENV_FILE:-.env.prod}
     volumes:
-      - ${DEPLOY_ENV_FILE:-.env.local}:/app/.env:ro
+      - ${DEPLOY_ENV_FILE:-.env.prod}:/app/.env:ro
       - ${UPLOAD_SOURCE:-./uploads}:/app/uploads
       - ${LOG_PATH:-./logs}:/app/logs
     depends_on:
@@ -35,7 +35,7 @@ services:
 
   reporting:
     image: ${REPORTING_IMAGE:-ghcr.io/jeraldvictor/hom-swag-reporting:latest}
-    pull_policy: always
+    pull_policy: ${REPORTING_PULL_POLICY:-always}
     restart: unless-stopped
     expose:
       - "3000"
@@ -50,7 +50,7 @@ services:
       REPORTING_CONSUMER_GROUP: ${REPORTING_CONSUMER_GROUP:-homswag-reporting-workers}
       REPORTING_BUCKET: ${REPORTING_BUCKET:-reports}
     env_file:
-      - ${DEPLOY_ENV_FILE:-.env.local}
+      - ${DEPLOY_ENV_FILE:-.env.prod}
     depends_on:
       kafka:
         condition: service_healthy
@@ -59,7 +59,8 @@ services:
 
   kafka:
     image: ${KAFKA_IMAGE:-ghcr.io/jeraldvictor/hom-swag-kafka:latest}
-    container_name: homswag-kafka
+    pull_policy: ${KAFKA_PULL_POLICY:-always}
+    container_name: ${KAFKA_CONTAINER_NAME:-homswag-kafka}
     restart: unless-stopped
     ports:
       - "${KAFKA_PORT:-9094}:9094"
@@ -85,7 +86,7 @@ services:
 
   admin:
     image: ${ADMIN_IMAGE:-ghcr.io/jeraldvictor/hom-swag-admin:latest}
-    pull_policy: always
+    pull_policy: ${ADMIN_PULL_POLICY:-always}
     restart: unless-stopped
     expose:
       - "80"
@@ -94,18 +95,18 @@ services:
 
   app:
     image: ${APP_IMAGE:-ghcr.io/jeraldvictor/hom-swag-app:latest}
-    pull_policy: always
+    pull_policy: ${APP_PULL_POLICY:-always}
     restart: unless-stopped
     expose:
       - "3000"
     env_file:
-      - ${DEPLOY_ENV_FILE:-.env.local}
+      - ${DEPLOY_ENV_FILE:-.env.prod}
     networks:
       - homswag-net
 
   nginx:
     image: docker.io/nginx:1.27-alpine
-    container_name: homswag-nginx
+    container_name: ${NGINX_CONTAINER_NAME:-homswag-nginx}
     restart: unless-stopped
     ports:
       - "${NGINX_HTTP_PORT:-80}:80"
@@ -116,7 +117,7 @@ services:
       API_DOMAIN: ${API_DOMAIN:-api.alpha.homswag.com}
       REPORTING_DOMAIN: ${REPORTING_DOMAIN:-reporting.alpha.homswag.com}
     volumes:
-      - ./nginx/templates:/etc/nginx/templates:ro
+      - ${NGINX_TEMPLATES_PATH:-./nginx/templates}:/etc/nginx/templates:ro
       - ./nginx/docker-entrypoint.d/05-remove-default-conf.sh:/docker-entrypoint.d/05-remove-default-conf.sh:ro
       - ${NGINX_CERTS_PATH:-./nginx/certs}:/etc/nginx/certs:ro
       - ./nginx/certbot:/var/www/certbot:ro

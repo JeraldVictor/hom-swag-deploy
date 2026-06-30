@@ -3,8 +3,8 @@
 # HomSwag — Build deployment images
 #
 # Usage:
-#   ./build-images.sh                         # build all deployment images locally
-#   ./build-images.sh --push                  # build all deployment images and push to GHCR
+#   ./build-images.sh                         # build production deployment images locally
+#   ./build-images.sh --push                  # build production deployment images and push to GHCR
 #   ./build-images.sh --env prod --push       # read tags/build args from .env.prod
 #   ./build-images.sh --env prod --no-cache --push # clean rebuild production images and push
 #   ./build-images.sh --tag 2026.06.15 --push # use one tag for all services
@@ -36,7 +36,7 @@ die()  { echo -e "${RED}[$(date '+%H:%M:%S')] \u2718${NC}  $*" >&2; exit 1; }
 IMAGE_REGISTRY="${IMAGE_REGISTRY:-ghcr.io/jeraldvictor}"
 PUSH_REGISTRY="${PUSH_REGISTRY:-ghcr.io/jeraldvictor}"
 PUSH_REGISTRY_EXPLICIT=false
-ENV_PROFILE="${DEPLOY_ENV:-local}"
+ENV_PROFILE="${DEPLOY_ENV:-prod}"
 ENV_FILE=""
 TAG_OVERRIDE=""
 PUSH=false
@@ -131,6 +131,18 @@ frontend_bff_url() {
     echo "$bff_url"
 }
 
+server_bff_url() {
+    local bff_url="${BFF_BASE_URL:-}"
+    if [[ -z "$bff_url" ]]; then
+        if is_prod_profile; then
+            bff_url="$(frontend_bff_url)"
+        else
+            bff_url="http://server:${SERVER_PORT:-3000}/bff"
+        fi
+    fi
+    echo "$bff_url"
+}
+
 frontend_reporting_url() {
     local reporting_url="${HS_REPORTING_URL:-${VITE_REPORTING_BASE_URL:-}}"
     if ! is_prod_profile; then
@@ -140,11 +152,12 @@ frontend_reporting_url() {
 }
 
 print_resolved_env() {
-    local api_url login_url media_url bff_url reporting_url customer_app_url
+    local api_url login_url media_url bff_url server_bff reporting_url customer_app_url
     api_url="$(frontend_api_url)"
     login_url="$(frontend_login_url)"
     media_url="$(frontend_media_url)"
     bff_url="$(frontend_bff_url)"
+    server_bff="$(server_bff_url)"
     reporting_url="$(frontend_reporting_url)"
     customer_app_url="${VITE_CUSTOMER_APP_URL:-}"
 
@@ -162,6 +175,7 @@ print_resolved_env() {
     echo -e "  VITE_AUTH_API_BASE_URL: ${BOLD}${login_url}${NC}"
     echo -e "  VITE_MEDIA_BASE_URL   : ${BOLD}${media_url}${NC}"
     echo -e "  VITE_BFF_BASE_URL     : ${BOLD}${bff_url}${NC}"
+    echo -e "  BFF_BASE_URL          : ${BOLD}${server_bff}${NC}"
     echo -e "  VITE_REPORTING_BASE_URL: ${BOLD}${reporting_url}${NC}"
     echo -e "  VITE_CUSTOMER_APP_URL : ${BOLD}${customer_app_url:-unset}${NC}"
     echo -e "  SERVER_IMAGE_TAG      : ${BOLD}${SERVER_IMAGE_TAG:-latest}${NC}"
@@ -179,11 +193,12 @@ write_frontend_env_files() {
 
     case "$service" in
         app)
-            local api_url login_url media_url bff_url
+            local api_url login_url media_url bff_url server_bff
             api_url="$(frontend_api_url)"
             login_url="$(frontend_login_url)"
             media_url="$(frontend_media_url)"
             bff_url="$(frontend_bff_url)"
+            server_bff="$(server_bff_url)"
 
             require_prod_url VITE_API_BASE_URL "$api_url"
             require_prod_url VITE_AUTH_API_BASE_URL "$login_url"
@@ -196,7 +211,7 @@ VITE_AUTH_API_BASE_URL=$login_url
 VITE_MEDIA_BASE_URL=$media_url
 PUBLIC_API_BASE_URL=$api_url
 MEDIA_BASE_URL=$media_url
-BFF_BASE_URL=$bff_url
+BFF_BASE_URL=$server_bff
 VITE_BFF_BASE_URL=$bff_url
 EOF
             cp "$target_dir/.env.prod" "$target_dir/.env.production"
@@ -348,6 +363,14 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         export "$line"
     fi
 done < "$ENV_FILE"
+
+if [[ "$PUSH" == true ]] && ! is_prod_profile; then
+    die "Refusing to push non-production images. Use --env prod --push for registry pushes."
+fi
+
+if [[ "$PUSH" == true && "$ENV_FILE" != ".env.prod" ]]; then
+    die "Refusing to push with env file '$ENV_FILE'. Registry pushes must use .env.prod."
+fi
 
 if [[ "$PUSH_REGISTRY_EXPLICIT" == false ]]; then
     PUSH_REGISTRY="${PUSH_REGISTRY:-ghcr.io/jeraldvictor}"
@@ -531,10 +554,13 @@ build_service() {
     fi
 
     if [[ "$service" == "app" ]]; then
-        local bff_url
+        local bff_url server_bff
         bff_url="$(frontend_bff_url)"
+        server_bff="$(server_bff_url)"
         require_prod_url VITE_BFF_BASE_URL "$bff_url"
+        require_prod_url BFF_BASE_URL "$server_bff"
         args+=(--build-arg "HS_BFF_URL=$bff_url")
+        args+=(--build-arg "HS_SERVER_BFF_URL=$server_bff")
     fi
 
     if [[ "$service" == "admin" ]]; then

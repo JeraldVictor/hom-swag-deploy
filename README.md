@@ -55,7 +55,12 @@ The script accepts profile selection with:
 - `--env local`
 - `--env prod`
 
-If no profile is passed, it defaults to `local`.
+If no profile is passed, deploy and build commands default to `prod`.
+Local work must be explicit with `--env local`.
+
+`compose.yaml` is the production base file. Local infrastructure and localhost
+port bindings live in `compose.local.yaml`, which `deploy.sh` uses only for the
+`local` profile.
 
 ### External data services
 
@@ -118,6 +123,136 @@ reloads nginx.
 ---
 
 ## Commands
+
+### Quick command reference
+
+All commands below are run from the `deploy/` folder.
+
+Production is the default profile. Local commands must always pass
+`--env local` so localhost images and ports are never used accidentally for
+production.
+
+#### Local build and deploy
+
+Use this flow for local testing with local images and direct localhost ports:
+
+```bash
+# Build all local deployment images. Does not push.
+./build-images.sh --env local
+
+# Build only selected local images after frontend/backend changes.
+./build-images.sh --env local admin app
+./build-images.sh --env local server
+
+# Start or update the local stack from local images.
+./deploy.sh --env local deploy
+
+# Validate the local stack.
+./deploy.sh --env local health
+./deploy.sh --env local status
+```
+
+Local URLs:
+
+```bash
+http://localhost:3000/health           # API server
+http://localhost:5173                  # admin
+http://localhost:8080                  # customer app
+http://localhost:3003/health           # reporting service
+http://localhost:9101                  # MinIO console
+```
+
+Useful local operations:
+
+```bash
+./deploy.sh --env local logs           # follow all logs
+./deploy.sh --env local logs server    # follow one service
+./deploy.sh --env local restart app    # restart one service
+./deploy.sh --env local recreate app   # recreate one service
+./deploy.sh --env local down           # stop/remove containers, keep volumes
+```
+
+Run commands inside local containers:
+
+```bash
+./deploy.sh --env local shell server
+./deploy.sh --env local exec server -- node -v
+./deploy.sh --env local exec server -- pnpm --version
+./deploy.sh --env local exec server -- pnpm seed:prod -- --upsert
+./deploy.sh --env local exec server -- pnpm seed:prod -- --upsert --only=locations,offices,menu,products
+./deploy.sh --env local seed --upsert --only=locations,offices,menu,products
+./deploy.sh --env local seed-reports
+```
+
+`server` is the right service for seeds and most `pnpm` commands. The `admin`
+runtime container is nginx-only, and the customer `app` runtime container runs
+the built Nitro output, so those containers are useful for shell inspection but
+not for source-level pnpm workflows.
+
+Local safety rules:
+
+- Local builds use `.env.local`, `compose.local.yaml`, and `homswag-local/*`
+  image names.
+- Local deploys skip registry pulls by default through `PULL_IMAGES=false`.
+- `./build-images.sh --env local --push` is intentionally blocked.
+- Local nginx is internal-only and does not publish HTTP or HTTPS ports.
+
+#### Production build and deploy
+
+Production build and deploy uses `.env.prod` and registry images. Use this flow
+when publishing release images and deploying PROD:
+
+```bash
+# Build production images locally, without pushing.
+./build-images.sh --env prod
+
+# Build and push production images to the registry.
+./build-images.sh --env prod --push
+
+# Clean rebuild and push production images.
+./build-images.sh --env prod --no-cache --push
+
+# Build/push selected production services.
+./build-images.sh --env prod server reporting --push
+./build-images.sh --env prod admin app --push
+
+# Graceful production deploy. This is also the default if --env is omitted.
+./deploy.sh --env prod deploy
+
+# Validate production public routes.
+./deploy.sh --env prod health
+```
+
+Useful production operations:
+
+```bash
+./deploy.sh --env prod pull            # pull registry images only
+./deploy.sh --env prod status          # show running containers
+./deploy.sh --env prod logs server     # follow server logs
+./deploy.sh --env prod restart nginx   # restart nginx
+./deploy.sh --env prod certs           # issue/renew Let's Encrypt certs
+```
+
+Run commands inside production containers:
+
+```bash
+./deploy.sh --env prod shell server
+./deploy.sh --env prod exec server -- node -v
+./deploy.sh --env prod exec server -- pnpm seed:prod -- --upsert --only=reports
+./deploy.sh --env prod seed-reports
+```
+
+Be careful with production seeds. Prefer scoped, idempotent/upsert commands
+such as `--upsert --only=reports` unless you intentionally need a broader seed.
+
+Production safety rules:
+
+- Build/deploy defaults to `prod` when no `--env` is provided.
+- Production frontend builds fail if required URLs are missing or point to
+  `localhost`, `127.0.0.1`, or `0.0.0.0`.
+- Push is allowed only for production profile with `.env.prod`.
+- Prefer `./deploy.sh --env prod deploy` for normal PROD rollout; it performs
+  the graceful scale-up, health validation, and old-container removal flow.
 
 ### Build and push release images
 
@@ -186,7 +321,7 @@ KAFKA_IMAGE=ghcr.io/jeraldvictor/hom-swag-kafka:latest
 
 ```bash
 ./deploy.sh [--env local|prod] \
-            [deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|status|health|seed|seed-reports]
+            [deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|seed|seed-reports]
 ```
 
 ### Full deploy
@@ -217,6 +352,23 @@ If a service normally runs more than one replica, the deploy script scales to at
 least double the normal replica count so it can prove the replacement set is
 healthy before removing the old containers.
 
+Local deploy uses `compose.local.yaml` with `.env.local`, which starts MongoDB,
+Redis, MinIO, Kafka, nginx, and the app services together. Browser-facing local
+traffic uses direct localhost ports only; service-to-service calls inside Docker
+still use compose service names such as `server` and `reporting`.
+
+```bash
+http://localhost:3000/health           # API server
+http://localhost:5173                  # admin
+http://localhost:8080                  # customer app
+http://localhost:3003/health           # reporting service
+http://localhost:9101                  # MinIO console
+```
+
+Local nginx is kept internal to the compose stack and does not publish HTTPS
+ports. Image pulls and image pruning are skipped by default for local deploys;
+build local frontend images first when changing `admin` or `app`.
+
 ### Clean deploy
 
 Clean deploy removes the compose stack first, pulls fresh images, starts from
@@ -242,10 +394,12 @@ volumes. Host bind mounts such as `/podLogs/...` are not deleted by Docker.
 ### Step-by-step
 
 ```bash
-./deploy.sh --env local pull
 ./build-images.sh --env local           # add --no-cache to force a clean build
-./deploy.sh --env local up
+./deploy.sh --env local deploy
 ```
+
+Registry pushes are intentionally production-only. `build-images.sh --push`
+refuses non-prod profiles and refuses any env file other than `.env.prod`.
 
 ### Service-specific step-by-step
 
