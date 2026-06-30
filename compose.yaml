@@ -216,7 +216,7 @@ services:
 
   nginx:
     <<: *homswag_service_logging
-    image: docker.io/nginx:1.27-alpine
+    image: ${NGINX_IMAGE:-docker.io/nginx:1.27-alpine}
     container_name: ${NGINX_CONTAINER_NAME:-homswag-nginx}
     restart: unless-stopped
     ports:
@@ -247,7 +247,7 @@ services:
 
   certbot:
     <<: *homswag_service_logging
-    image: docker.io/certbot/certbot:latest
+    image: ${CERTBOT_IMAGE:-docker.io/certbot/certbot:latest}
     profiles:
       - certbot
     volumes:
