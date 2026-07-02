@@ -153,6 +153,9 @@ frontend_reporting_url() {
 
 partner_bff_api_url() {
     local bff_api_url="${VITE_PARTNER_BFF_API_URL:-${VITE_BFF_API_URL:-}}"
+    if [[ -z "${VITE_PARTNER_BFF_API_URL:-}" && "$bff_api_url" == */bff ]]; then
+        bff_api_url="${bff_api_url%/}/field"
+    fi
     if [[ -z "$bff_api_url" && -n "${VITE_API_BASE_URL:-}" ]]; then
         bff_api_url="${VITE_API_BASE_URL%/}/bff/field"
     fi
@@ -241,6 +244,7 @@ print_resolved_env() {
     echo -e "  BFF_BASE_URL          : ${BOLD}${server_bff}${NC}"
     echo -e "  VITE_REPORTING_BASE_URL: ${BOLD}${reporting_url}${NC}"
     echo -e "  VITE_REPORTING_SERVICE_URL: ${BOLD}${reporting_url}${NC}"
+    echo -e "  VITE_REPORTING_API_TOKEN: ${BOLD}$([[ -n "${VITE_REPORTING_API_TOKEN:-${REPORTING_API_TOKEN:-}}" ]] && echo set || echo unset)${NC}"
     echo -e "  VITE_CUSTOMER_APP_URL : ${BOLD}${customer_app_url:-unset}${NC}"
     echo -e "  VITE_PARTNER_APP_URL  : ${BOLD}${partner_app_url}${NC}"
     echo -e "  VITE_SIGNOZ_URL       : ${BOLD}${signoz_url}${NC}"
@@ -319,6 +323,7 @@ VITE_AUTH_API_BASE_URL=$login_url
 VITE_MEDIA_BASE_URL=$media_url
 VITE_REPORTING_BASE_URL=$reporting_url
 VITE_REPORTING_SERVICE_URL=$reporting_url
+VITE_REPORTING_API_TOKEN=${VITE_REPORTING_API_TOKEN:-${REPORTING_API_TOKEN:-}}
 VITE_ENABLE_RUM=${VITE_ENABLE_RUM:-false}
 VITE_RUM_TRACES_ENDPOINT=${VITE_RUM_TRACES_ENDPOINT:-}
 VITE_RUM_SERVICE_NAME=${VITE_ADMIN_RUM_SERVICE_NAME:-admin-app}
@@ -674,6 +679,7 @@ build_service() {
         require_prod_url VITE_MONITOR_URL "$monitor_url"
         args+=(--build-arg "HS_REPORTING_URL=$reporting_url")
         args+=(--build-arg "HS_REPORTING_SERVICE_URL=$reporting_url")
+        args+=(--build-arg "HS_REPORTING_API_TOKEN=${VITE_REPORTING_API_TOKEN:-${REPORTING_API_TOKEN:-}}")
         args+=(--build-arg "HS_CUSTOMER_APP_URL=$customer_app_url")
         args+=(--build-arg "HS_PARTNER_APP_URL=$partner_app_url")
         args+=(--build-arg "HS_SIGNOZ_URL=$signoz_url")

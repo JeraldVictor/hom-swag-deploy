@@ -13,10 +13,10 @@ RUN pnpm install --no-frozen-lockfile --ignore-scripts \
 
 COPY repos/partner/ .
 
-ARG HS_PARTNER_BFF_API_URL=https://api.alpha.homswag.com/bff/field
-ARG HS_PARTNER_BFF_BASE_URL=https://api.alpha.homswag.com
+ARG HS_PARTNER_BFF_API_URL=https://partner.homswag.com/bff/field
+ARG HS_PARTNER_BFF_BASE_URL=https://partner.homswag.com
 ARG HS_MEDIA_URL=https://api.alpha.homswag.com
-ARG HS_PARTNER_WS_URL=wss://api.alpha.homswag.com
+ARG HS_PARTNER_WS_URL=wss://partner.homswag.com
 ARG HS_GOOGLE_MAPS_API_KEY=
 ARG HS_FEATURE_MAPS=false
 ARG HS_FEATURE_DIRECTIONS=false
