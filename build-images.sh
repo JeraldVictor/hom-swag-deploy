@@ -11,7 +11,7 @@
 #   ./build-images.sh server admin            # build selected services
 #   ./build-images.sh --image-registry ghcr.io/owner --push-registry ghcr.io/owner
 #
-# Services: server, reporting, admin, app, partner, kafka
+# Services: server, reporting, admin, app, partner
 # Builds/tags local images under IMAGE_REGISTRY. Only --push tags and pushes
 # the matching image to PUSH_REGISTRY.
 # =============================================================================
@@ -46,7 +46,7 @@ SERVICES=()
 
 is_service() {
     case "$1" in
-        server|reporting|admin|app|partner|kafka|all) return 0 ;;
+        server|reporting|admin|app|partner|all) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -253,7 +253,6 @@ print_resolved_env() {
     echo -e "  ADMIN_IMAGE_TAG       : ${BOLD}${ADMIN_IMAGE_TAG:-latest}${NC}"
     echo -e "  APP_IMAGE_TAG         : ${BOLD}${APP_IMAGE_TAG:-latest}${NC}"
     echo -e "  PARTNER_IMAGE_TAG     : ${BOLD}${PARTNER_IMAGE_TAG:-latest}${NC}"
-    echo -e "  KAFKA_IMAGE_TAG       : ${BOLD}${KAFKA_IMAGE_TAG:-latest}${NC}"
     echo -e "  NO_CACHE              : ${BOLD}${NO_CACHE}${NC}"
     echo ""
 }
@@ -448,7 +447,7 @@ while [[ "$#" -gt 0 ]]; do
         *)
             if is_service "$1"; then
                 if [[ "$1" == "all" ]]; then
-                    SERVICES=(server reporting admin app partner kafka)
+                    SERVICES=(server reporting admin app partner)
                 else
                     SERVICES+=("$1")
                 fi
@@ -495,7 +494,7 @@ IMAGE_REGISTRY="${IMAGE_REGISTRY%/}"
 PUSH_REGISTRY="${PUSH_REGISTRY%/}"
 
 if [[ "${#SERVICES[@]}" -eq 0 ]]; then
-    SERVICES=(server reporting admin app partner kafka)
+    SERVICES=(server reporting admin app partner)
 fi
 
 if command -v docker &>/dev/null; then
@@ -539,7 +538,6 @@ image_tag_for() {
         admin)     echo "${ADMIN_IMAGE_TAG:-latest}" ;;
         app)       echo "${APP_IMAGE_TAG:-latest}" ;;
         partner)   echo "${PARTNER_IMAGE_TAG:-latest}" ;;
-        kafka)     echo "${KAFKA_IMAGE_TAG:-latest}" ;;
     esac
 }
 
@@ -600,7 +598,6 @@ prepare_context() {
 
     local service source
     for service in "${SERVICES[@]}"; do
-        [[ "$service" == "kafka" ]] && continue
         source="$(require_source "$service")"
         log "Preparing $service source from $source"
         sync_source "$source" "$context_dir/repos/$service"
@@ -614,34 +611,6 @@ prepare_context() {
     echo "$context_dir"
 }
 
-build_kafka_image() {
-    local service="kafka"
-    local source_image="${KAFKA_SOURCE_IMAGE:-apache/kafka:latest}"
-    local kafka_platform="${KAFKA_PLATFORM:-${PLATFORM:-linux/amd64}}"
-    local image
-    local push_image
-    image="$(image_name_for "$service")"
-    push_image="$(push_image_name_for "$service")"
-
-    local pull_args=(pull --platform "$kafka_platform")
-    pull_args+=("$source_image")
-
-    echo ""
-    echo -e "${BOLD}━━━  Building kafka  ━━━${NC}"
-    log "Pulling $source_image for $kafka_platform"
-    "$CONTAINER_BIN" "${pull_args[@]}"
-    log "Tagging $source_image as $image"
-    "$CONTAINER_BIN" tag "$source_image" "$image"
-    ok "Built $image"
-
-    if [[ "$PUSH" == true ]]; then
-        log "Tagging $image as $push_image"
-        "$CONTAINER_BIN" tag "$image" "$push_image"
-        log "Pushing $push_image"
-        "$CONTAINER_BIN" push "$push_image"
-        ok "Pushed $push_image"
-    fi
-}
 
 build_service() {
     local service="$1"
@@ -764,11 +733,7 @@ ensure_push_registry_auth
 CONTEXT_DIR="$(prepare_context)"
 
 for service in "${SERVICES[@]}"; do
-    if [[ "$service" == "kafka" ]]; then
-        build_kafka_image
-    else
-        build_service "$service" "$CONTEXT_DIR"
-    fi
+    build_service "$service" "$CONTEXT_DIR"
 done
 
 ok "Image build complete."

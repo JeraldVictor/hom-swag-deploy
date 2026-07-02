@@ -169,7 +169,7 @@ services:
 
   kafka:
     <<: *homswag_service_logging
-    image: ${KAFKA_IMAGE:-ghcr.io/jeraldvictor/hom-swag-kafka:latest}
+    image: ${KAFKA_IMAGE:-docker.io/apache/kafka:latest}
     pull_policy: ${KAFKA_PULL_POLICY:-always}
     container_name: ${KAFKA_CONTAINER_NAME:-homswag-kafka}
     restart: unless-stopped
