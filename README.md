@@ -90,10 +90,14 @@ MinIO, or Mongo Express containers.
 - Admin: `https://admin.alpha.homswag.com`
 - API: `https://api.alpha.homswag.com`
 - Reporting: `https://reporting.alpha.homswag.com`
+- Partner app: `https://partner.homswag.com`
+- SigNoz UI: `https://signoz.homswag.com`
+- Portainer UI: `https://ports.homswag.com`
+- Public OTLP HTTP collector: `https://monitor.homswag.com`
 
 ### Nginx TLS routing
 
-- Reverse proxy config: `nginx/prod.conf`
+- Reverse proxy template: `nginx/templates/homswag.conf.template`
 - Public ports are served by the `nginx` service on `80` and `443`
 - Certificates are mounted from `NGINX_CERTS_PATH` (default: `./nginx/certs`)
 - Expected cert files:
@@ -105,10 +109,18 @@ MinIO, or Mongo Express containers.
   - `nginx/certs/api.alpha.homswag.com/privkey.pem`
   - `nginx/certs/reporting.alpha.homswag.com/fullchain.pem`
   - `nginx/certs/reporting.alpha.homswag.com/privkey.pem`
+  - `nginx/certs/partner.homswag.com/fullchain.pem`
+  - `nginx/certs/partner.homswag.com/privkey.pem`
+  - `nginx/certs/signoz.homswag.com/fullchain.pem`
+  - `nginx/certs/signoz.homswag.com/privkey.pem`
+  - `nginx/certs/ports.homswag.com/fullchain.pem`
+  - `nginx/certs/ports.homswag.com/privkey.pem`
+  - `nginx/certs/monitor.homswag.com/fullchain.pem`
+  - `nginx/certs/monitor.homswag.com/privkey.pem`
 
 If a cert is missing, `deploy.sh` creates a temporary 7-day self-signed cert so
 nginx can start. To issue trusted Let's Encrypt certificates, make sure DNS for
-all four domains points to the deployment host and port `80` is reachable, then
+all production domains points to the deployment host and port `80` is reachable, then
 run:
 
 ```bash
@@ -141,7 +153,8 @@ Use this flow for local testing with local images and direct localhost ports:
 ./build-images.sh --env local
 
 # Build only selected local images after frontend/backend changes.
-./build-images.sh --env local admin app
+./build-images.sh --env local admin app partner
+./build-images.sh --env local partner
 ./build-images.sh --env local server
 
 # Start or update the local stack from local images.
@@ -181,6 +194,7 @@ Local URLs:
 http://localhost:3000/health           # API server
 http://localhost:5173                  # admin
 http://localhost:8080                  # customer app
+http://localhost:8090                  # partner app
 http://localhost:3003/health           # reporting service
 http://localhost:9080                  # SigNoz UI
 http://localhost:9443                  # Portainer UI
@@ -320,7 +334,9 @@ OTEL_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
 DOCKER_LOG_FLUENTD_ADDRESS=127.0.0.1:24224
 OTEL_COLLECTOR_FORWARD_PORT=24224
 SIGNOZ_HTTP_PORT=8080
+SIGNOZ_HTTP_BIND=127.0.0.1
 PORTAINER_HTTPS_PORT=9443
+PORTAINER_HTTPS_BIND=127.0.0.1
 SIGNOZ_RETENTION_DAYS=7
 SIGNOZ_MAX_BYTES=5368709120
 ```
@@ -330,25 +346,28 @@ Local access:
 - SigNoz: `http://localhost:9080`
 - Portainer: `https://localhost:9443`
 
-Production access (if ports are exposed):
+Production access:
 
-- SigNoz: `http://<host>:8080`
-- Portainer: `https://<host>:9443`
+- SigNoz: `https://signoz.homswag.com`
+- Portainer: `https://ports.homswag.com`
+- OTLP HTTP collector: `https://monitor.homswag.com/v1/traces`,
+  `https://monitor.homswag.com/v1/logs`, and
+  `https://monitor.homswag.com/v1/metrics`
 
-If you want to keep these off public internet in prod, terminate them with your
-firewall/reverse-proxy rules or do not expose the ports in your env.
+Production SigNoz and Portainer direct host port defaults bind to `127.0.0.1`.
+Keep those defaults unless you intentionally need raw host-port access; public
+access should go through nginx and the TLS domains above.
 
-Browser RUM collection uses the existing API domain and is intentionally limited
-to the traces endpoint:
+Browser RUM collection can use either the existing API domain trace endpoint or
+the dedicated monitor domain:
 
 ```bash
 https://api.alpha.homswag.com/otel/v1/traces
+https://monitor.homswag.com/v1/traces
 ```
 
-Nginx proxies only `/otel/v1/traces` to `otel-collector:4318/v1/traces`.
-Other `/otel/*` paths return `404`, so logs and generic OTLP ingestion are not
-opened publicly. Server and reporting telemetry continue to use the internal
-Docker network endpoint `http://otel-collector:4318`.
+Server and reporting telemetry continue to use the internal Docker network
+endpoint `http://otel-collector:4318`.
 
 ### Full UI + Login for SigNoz & Portainer
 
@@ -371,7 +390,7 @@ SIGNOZ_USER_ROOT_PASSWORD=change-this-root-password-strong
 Use the first-run wizard to create your Portainer admin user on first startup.
 
 - SigNoz login:
-  - Open `http://localhost:9080` (local) / `http://<host>:8080` (production when exposed)
+  - Open `http://localhost:9080` (local) / `https://signoz.homswag.com` (production)
   - Sign in with the root user created above.
   - Logs Explorer:
     - Use `Last 30 minutes`, then refresh.
@@ -558,13 +577,14 @@ still use compose service names such as `server` and `reporting`.
 http://localhost:3000/health           # API server
 http://localhost:5173                  # admin
 http://localhost:8080                  # customer app
+http://localhost:8090                  # partner app
 http://localhost:3003/health           # reporting service
 http://localhost:9101                  # MinIO console
 ```
 
 Local nginx is kept internal to the compose stack and does not publish HTTPS
 ports. Image pulls and image pruning are skipped by default for local deploys;
-build local frontend images first when changing `admin` or `app`.
+build local frontend images first when changing `admin`, `app`, or `partner`.
 
 ### Clean deploy
 
@@ -592,6 +612,7 @@ volumes. Host bind mounts such as `/podLogs/...` are not deleted by Docker.
 
 ```bash
 ./build-images.sh --env local           # add --no-cache to force a clean build
+./build-images.sh --env local partner   # rebuild only the partner web image
 ./deploy.sh --env local deploy
 ```
 

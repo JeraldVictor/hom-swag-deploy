@@ -85,9 +85,9 @@ services:
       - signoz_data:/var/lib/signoz
       - signoz_clickhouse_data:/var/lib/clickhouse
     ports:
-      - "${SIGNOZ_HTTP_BIND:-0.0.0.0}:${SIGNOZ_HTTP_PORT:-8080}:8080"
-      - "${SIGNOZ_OTLP_GRPC_BIND:-0.0.0.0}:${SIGNOZ_OTLP_GRPC_PORT:-4317}:4317"
-      - "${SIGNOZ_OTLP_HTTP_BIND:-0.0.0.0}:${SIGNOZ_OTLP_HTTP_PORT:-4318}:4318"
+      - "${SIGNOZ_HTTP_BIND:-127.0.0.1}:${SIGNOZ_HTTP_PORT:-8080}:8080"
+      - "${SIGNOZ_OTLP_GRPC_BIND:-127.0.0.1}:${SIGNOZ_OTLP_GRPC_PORT:-4317}:4317"
+      - "${SIGNOZ_OTLP_HTTP_BIND:-127.0.0.1}:${SIGNOZ_OTLP_HTTP_PORT:-4318}:4318"
     networks:
       - homswag-net
 
@@ -129,6 +129,7 @@ services:
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-production}
       OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_APP: ${OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_APP:-https://alpha.homswag.com}
       OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_ADMIN: ${OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_ADMIN:-https://admin.alpha.homswag.com}
+      OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_PARTNER: ${OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_PARTNER:-https://partner.homswag.com}
     volumes:
       - ./otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
       - ${PORTAINER_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
@@ -159,8 +160,8 @@ services:
       - ${PORTAINER_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
       - portainer_data:/data
     ports:
-      - "${PORTAINER_HTTP_BIND:-0.0.0.0}:${PORTAINER_HTTP_PORT:-8000}:8000"
-      - "${PORTAINER_HTTPS_BIND:-0.0.0.0}:${PORTAINER_HTTPS_PORT:-9443}:9443"
+      - "${PORTAINER_HTTP_BIND:-127.0.0.1}:${PORTAINER_HTTP_PORT:-8000}:8000"
+      - "${PORTAINER_HTTPS_BIND:-127.0.0.1}:${PORTAINER_HTTPS_PORT:-9443}:9443"
     networks:
       - homswag-net
 
@@ -202,6 +203,16 @@ services:
     networks:
       - homswag-net
 
+  partner:
+    <<: *homswag_service_logging
+    image: ${PARTNER_IMAGE:-ghcr.io/jeraldvictor/hom-swag-partner:latest}
+    pull_policy: ${PARTNER_PULL_POLICY:-always}
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - homswag-net
+
   app:
     <<: *homswag_service_logging
     image: ${APP_IMAGE:-ghcr.io/jeraldvictor/hom-swag-app:latest}
@@ -227,6 +238,10 @@ services:
       ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.alpha.homswag.com}
       API_DOMAIN: ${API_DOMAIN:-api.alpha.homswag.com}
       REPORTING_DOMAIN: ${REPORTING_DOMAIN:-reporting.alpha.homswag.com}
+      PARTNER_DOMAIN: ${PARTNER_DOMAIN:-partner.homswag.com}
+      SIGNOZ_DOMAIN: ${SIGNOZ_DOMAIN:-signoz.homswag.com}
+      PORTAINER_DOMAIN: ${PORTAINER_DOMAIN:-ports.homswag.com}
+      MONITOR_DOMAIN: ${MONITOR_DOMAIN:-monitor.homswag.com}
     volumes:
       - ${NGINX_TEMPLATES_PATH:-./nginx/templates}:/etc/nginx/templates:ro
       - ./nginx/docker-entrypoint.d/05-remove-default-conf.sh:/docker-entrypoint.d/05-remove-default-conf.sh:ro
@@ -239,6 +254,8 @@ services:
       reporting:
         condition: service_started
       admin:
+        condition: service_started
+      partner:
         condition: service_started
       app:
         condition: service_started

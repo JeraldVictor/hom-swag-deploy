@@ -156,6 +156,7 @@ COMPOSE="$COMPOSE_BIN --env-file $ENV_FILE $COMPOSE_FILES"
 SERVER_PORT="${SERVER_PORT:-3000}"
 ADMIN_PORT="${ADMIN_PORT:-3001}"
 APP_PORT="${APP_PORT:-3002}"
+PARTNER_PORT="${PARTNER_PORT:-3004}"
 REPORTING_PORT="${REPORTING_PORT:-3003}"
 NGINX_HTTP_PORT="${NGINX_HTTP_PORT:-80}"
 NGINX_HTTPS_PORT="${NGINX_HTTPS_PORT:-443}"
@@ -163,10 +164,15 @@ APP_DOMAIN="${APP_DOMAIN:-alpha.homswag.com}"
 ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.alpha.homswag.com}"
 API_DOMAIN="${API_DOMAIN:-api.alpha.homswag.com}"
 REPORTING_DOMAIN="${REPORTING_DOMAIN:-reporting.alpha.homswag.com}"
+PARTNER_DOMAIN="${PARTNER_DOMAIN:-partner.homswag.com}"
+SIGNOZ_DOMAIN="${SIGNOZ_DOMAIN:-signoz.homswag.com}"
+PORTAINER_DOMAIN="${PORTAINER_DOMAIN:-ports.homswag.com}"
+MONITOR_DOMAIN="${MONITOR_DOMAIN:-monitor.homswag.com}"
 SERVER_REPLICAS="${SERVER_REPLICAS:-1}"
 REPORTING_REPLICAS="${REPORTING_REPLICAS:-1}"
 ADMIN_REPLICAS="${ADMIN_REPLICAS:-1}"
 APP_REPLICAS="${APP_REPLICAS:-1}"
+PARTNER_REPLICAS="${PARTNER_REPLICAS:-1}"
 DEPLOY_REPLICAS="${DEPLOY_REPLICAS:-2}"
 
 # =============================================================================
@@ -191,7 +197,7 @@ ensure_nginx_certs() {
     [[ "$certs_path" = /* ]] || certs_path="${SCRIPT_DIR}/${certs_path}"
 
     local domain
-    for domain in "$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN"; do
+    for domain in "$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$PARTNER_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN"; do
         local cert_dir="${certs_path}/${domain}"
         local cert_file="${cert_dir}/fullchain.pem"
         local key_file="${cert_dir}/privkey.pem"
@@ -263,7 +269,7 @@ cmd_certs() {
     log "Starting nginx so Let's Encrypt can reach HTTP-01 challenge paths ..."
     $COMPOSE up -d nginx
 
-    local domains=("$APP_DOMAIN" "$ADMIN_DOMAIN" "$API_DOMAIN" "$REPORTING_DOMAIN")
+    local domains=("$APP_DOMAIN" "$ADMIN_DOMAIN" "$API_DOMAIN" "$REPORTING_DOMAIN" "$PARTNER_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN")
     local domain
     for domain in "${domains[@]}"; do
         log "Requesting certificate for: ${domain}"
@@ -311,7 +317,8 @@ cmd_up() {
         --scale server="$SERVER_REPLICAS" \
         --scale reporting="$REPORTING_REPLICAS" \
         --scale admin="$ADMIN_REPLICAS" \
-        --scale app="$APP_REPLICAS"
+        --scale app="$APP_REPLICAS" \
+        --scale partner="$PARTNER_REPLICAS"
     if [[ "$ENV_PROFILE" == "local" ]]; then
         $COMPOSE up -d --force-recreate nginx
     fi
@@ -325,6 +332,7 @@ cmd_up() {
         echo -e "  ${BOLD}Reporting${NC}-> http://localhost:${REPORTING_PORT}"
         echo -e "  ${BOLD}Admin${NC}    -> http://localhost:${ADMIN_PORT}"
         echo -e "  ${BOLD}App${NC}      -> http://localhost:${APP_PORT}"
+        echo -e "  ${BOLD}Partner${NC}  -> http://localhost:${PARTNER_PORT}"
         echo -e "  ${BOLD}SigNoz${NC}   -> http://localhost:${SIGNOZ_HTTP_PORT:-9080}"
         echo -e "  ${BOLD}Portainer${NC}-> https://localhost:${PORTAINER_HTTPS_PORT:-9443} (UI), http://localhost:${PORTAINER_HTTP_PORT:-8000} (agent)"
     else
@@ -332,8 +340,10 @@ cmd_up() {
         echo -e "  ${BOLD}Reporting${NC}-> https://${REPORTING_DOMAIN}"
         echo -e "  ${BOLD}Admin${NC}    -> https://${ADMIN_DOMAIN}"
         echo -e "  ${BOLD}App${NC}      -> https://${APP_DOMAIN}"
-        echo -e "  ${BOLD}SigNoz${NC}   -> https://<host>:${SIGNOZ_HTTP_PORT:-8080}"
-        echo -e "  ${BOLD}Portainer${NC}-> https://<host>:${PORTAINER_HTTPS_PORT:-9443}"
+        echo -e "  ${BOLD}Partner${NC}  -> https://${PARTNER_DOMAIN}"
+        echo -e "  ${BOLD}SigNoz${NC}   -> https://${SIGNOZ_DOMAIN}"
+        echo -e "  ${BOLD}Portainer${NC}-> https://${PORTAINER_DOMAIN}"
+        echo -e "  ${BOLD}OTEL${NC}     -> https://${MONITOR_DOMAIN}"
     fi
     echo ""
 }
@@ -348,6 +358,7 @@ app_image_for() {
         reporting) echo "${REPORTING_IMAGE:-${registry}/hom-swag-reporting:${REPORTING_IMAGE_TAG:-latest}}" ;;
         admin)     echo "${ADMIN_IMAGE:-${registry}/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}}" ;;
         app)       echo "${APP_IMAGE:-${registry}/hom-swag-app:${APP_IMAGE_TAG:-latest}}" ;;
+        partner)   echo "${PARTNER_IMAGE:-${registry}/hom-swag-partner:${PARTNER_IMAGE_TAG:-latest}}" ;;
         *)         die "Unknown app service: $service" ;;
     esac
 }
@@ -358,6 +369,7 @@ replicas_for() {
         reporting) echo "$REPORTING_REPLICAS" ;;
         admin)     echo "$ADMIN_REPLICAS" ;;
         app)       echo "$APP_REPLICAS" ;;
+        partner)   echo "$PARTNER_REPLICAS" ;;
         *)         die "Unknown app service: $1" ;;
     esac
 }
@@ -368,6 +380,7 @@ health_target_for() {
         reporting) echo "3000 /health" ;;
         admin)     echo "80 /" ;;
         app)       echo "3000 /" ;;
+        partner)   echo "80 /" ;;
         *)         die "Unknown app service: $1" ;;
     esac
 }
@@ -531,7 +544,7 @@ wait_for_new_service_containers() {
 
 wait_for_new_app_containers() {
     local service
-    for service in server reporting admin app; do
+    for service in server reporting admin app partner; do
         wait_for_new_service_containers "$service" "$(app_image_for "$service")" "$(replicas_for "$service")"
     done
 }
@@ -561,11 +574,12 @@ cmd_safe_deploy() {
 
     echo ""
     echo -e "${BOLD}━━━  Scaling new replicas  ━━━${NC}"
-    local server_deploy_replicas reporting_deploy_replicas admin_deploy_replicas app_deploy_replicas
+    local server_deploy_replicas reporting_deploy_replicas admin_deploy_replicas app_deploy_replicas partner_deploy_replicas
     server_deploy_replicas="$(deploy_replicas_for server)"
     reporting_deploy_replicas="$(deploy_replicas_for reporting)"
     admin_deploy_replicas="$(deploy_replicas_for admin)"
     app_deploy_replicas="$(deploy_replicas_for app)"
+    partner_deploy_replicas="$(deploy_replicas_for partner)"
     log "Starting extra app replicas behind nginx"
     $COMPOSE up -d --remove-orphans kafka
     $COMPOSE up -d --no-recreate --remove-orphans \
@@ -573,7 +587,8 @@ cmd_safe_deploy() {
         --scale reporting="$reporting_deploy_replicas" \
         --scale admin="$admin_deploy_replicas" \
         --scale app="$app_deploy_replicas" \
-        server reporting admin app nginx
+        --scale partner="$partner_deploy_replicas" \
+        server reporting admin app partner nginx
     reload_nginx
 
     wait_for_new_app_containers
@@ -582,7 +597,7 @@ cmd_safe_deploy() {
     echo ""
     echo -e "${BOLD}━━━  Removing old app containers  ━━━${NC}"
     local service
-    for service in server reporting admin app; do
+    for service in server reporting admin app partner; do
         remove_outdated_service_containers "$service" "$(app_image_for "$service")" "$(replicas_for "$service")"
         reload_nginx
         wait_for_new_service_containers "$service" "$(app_image_for "$service")" "$(replicas_for "$service")"
@@ -592,6 +607,7 @@ cmd_safe_deploy() {
         --scale reporting="$REPORTING_REPLICAS" \
         --scale admin="$ADMIN_REPLICAS" \
         --scale app="$APP_REPLICAS" \
+        --scale partner="$PARTNER_REPLICAS" \
         nginx
     reload_nginx
     cmd_health
@@ -629,9 +645,9 @@ cmd_health() {
     local all_ok=true
 
     # Parallel arrays — avoids associative arrays (bash 3.2 on macOS)
-    local svcs=("server" "reporting" "admin" "app" "signoz" "portainer" "otel-collector")
-    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$API_DOMAIN" "$API_DOMAIN" "$API_DOMAIN")
-    local paths=("/health" "/health" "/health" "/" "/" "/" "/")
+    local svcs=("server" "reporting" "admin" "app" "partner" "signoz" "portainer" "otel-collector")
+    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$PARTNER_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN")
+    local paths=("/health" "/health" "/health" "/" "/health" "/" "/" "/")
 
     local i
     for i in "${!svcs[@]}"; do
@@ -643,11 +659,11 @@ cmd_health() {
         local url
         if [[ "$svc" == "minio" ]]; then
             url="http://localhost:${MINIO_PORT:-9000}${path}"
-        elif [[ "$svc" == "signoz" ]]; then
+        elif [[ "$svc" == "signoz" && "$ENV_PROFILE" == "local" ]]; then
             url="http://localhost:${SIGNOZ_HTTP_PORT:-8080}${path}"
-        elif [[ "$svc" == "otel-collector" ]]; then
+        elif [[ "$svc" == "otel-collector" && "$ENV_PROFILE" == "local" ]]; then
             url="http://localhost:${OTEL_COLLECTOR_HEALTH_PORT:-13133}${path}"
-        elif [[ "$svc" == "portainer" ]]; then
+        elif [[ "$svc" == "portainer" && "$ENV_PROFILE" == "local" ]]; then
             url="https://localhost:${PORTAINER_HTTPS_PORT:-9443}${path}"
         elif [[ "$ENV_PROFILE" == "local" ]]; then
             scheme="http"
@@ -656,6 +672,7 @@ cmd_health() {
                 reporting) port="$REPORTING_PORT" ;;
                 admin)     port="$ADMIN_PORT" ;;
                 app)       port="$APP_PORT" ;;
+                partner)   port="$PARTNER_PORT" ;;
             esac
             url="${scheme}://localhost:${port}${path}"
         else
@@ -668,7 +685,7 @@ cmd_health() {
         local check_url="$url"
         local target_message="$url"
         local successful_url="$url"
-        if [[ "$svc" == "portainer" ]]; then
+        if [[ "$svc" == "portainer" && "$ENV_PROFILE" == "local" ]]; then
             check_url="https://localhost:${PORTAINER_HTTPS_PORT:-9443}${path}"
             fallback_url="http://localhost:${PORTAINER_HTTP_PORT:-8000}${path}"
             target_message="$check_url (then $fallback_url)"
@@ -687,7 +704,7 @@ cmd_health() {
                     http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$fallback_url" || echo "000")
                     successful_url="$fallback_url"
                 fi
-            elif [[ "$svc" == "minio" || "$svc" == "signoz" || "$svc" == "otel-collector" || "$ENV_PROFILE" == "local" ]]; then
+            elif [[ "$svc" == "minio" || "$ENV_PROFILE" == "local" ]]; then
                 http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$url" || echo "000")
             else
                 http_code=$(curl -k -s -o "$tmp_body" -w "%{http_code}" --max-time 5 --resolve "${domain}:${port}:127.0.0.1" "$url" || echo "000")

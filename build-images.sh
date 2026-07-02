@@ -11,7 +11,7 @@
 #   ./build-images.sh server admin            # build selected services
 #   ./build-images.sh --image-registry ghcr.io/owner --push-registry ghcr.io/owner
 #
-# Services: server, reporting, admin, app, kafka
+# Services: server, reporting, admin, app, partner, kafka
 # Builds/tags local images under IMAGE_REGISTRY. Only --push tags and pushes
 # the matching image to PUSH_REGISTRY.
 # =============================================================================
@@ -46,7 +46,7 @@ SERVICES=()
 
 is_service() {
     case "$1" in
-        server|reporting|admin|app|kafka|all) return 0 ;;
+        server|reporting|admin|app|partner|kafka|all) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -151,8 +151,58 @@ frontend_reporting_url() {
     echo "$reporting_url"
 }
 
+partner_bff_api_url() {
+    local bff_api_url="${VITE_PARTNER_BFF_API_URL:-${VITE_BFF_API_URL:-}}"
+    if [[ -z "$bff_api_url" && -n "${VITE_API_BASE_URL:-}" ]]; then
+        bff_api_url="${VITE_API_BASE_URL%/}/bff/field"
+    fi
+    if ! is_prod_profile; then
+        bff_api_url="${bff_api_url:-http://localhost:${SERVER_PORT:-3000}/bff/field}"
+    fi
+    echo "$bff_api_url"
+}
+
+partner_bff_base_url() {
+    local bff_base_url="${VITE_PARTNER_BFF_BASE_URL:-${VITE_BFF_BASE_URL:-${BFF_BASE_URL:-}}}"
+    if [[ -z "$bff_base_url" && -n "${VITE_API_BASE_URL:-}" ]]; then
+        bff_base_url="${VITE_API_BASE_URL%/}"
+    fi
+    if ! is_prod_profile; then
+        bff_base_url="${bff_base_url:-http://localhost:${SERVER_PORT:-3000}}"
+    fi
+    echo "$bff_base_url"
+}
+
+partner_ws_url() {
+    local ws_url="${VITE_PARTNER_WS_URL:-${VITE_WS_URL:-}}"
+    if [[ -z "$ws_url" && -n "${VITE_API_BASE_URL:-}" ]]; then
+        ws_url="${VITE_API_BASE_URL/https:/wss:}"
+        ws_url="${ws_url/http:/ws:}"
+    fi
+    if ! is_prod_profile; then
+        ws_url="${ws_url:-http://localhost:${SERVER_PORT:-3000}}"
+    fi
+    echo "$ws_url"
+}
+
+admin_utility_url() {
+    local variable_name="$1"
+    local local_default="$2"
+    local prod_default="$3"
+    local value="${!variable_name:-}"
+
+    if [[ -n "$value" ]]; then
+        echo "$value"
+    elif is_prod_profile; then
+        echo "$prod_default"
+    else
+        echo "$local_default"
+    fi
+}
+
 print_resolved_env() {
-    local api_url login_url media_url bff_url server_bff reporting_url customer_app_url
+    local api_url login_url media_url bff_url server_bff reporting_url customer_app_url partner_api_url partner_ws
+    local partner_app_url signoz_url portainer_url monitor_url
     api_url="$(frontend_api_url)"
     login_url="$(frontend_login_url)"
     media_url="$(frontend_media_url)"
@@ -160,6 +210,12 @@ print_resolved_env() {
     server_bff="$(server_bff_url)"
     reporting_url="$(frontend_reporting_url)"
     customer_app_url="${VITE_CUSTOMER_APP_URL:-}"
+    partner_api_url="$(partner_bff_api_url)"
+    partner_ws="$(partner_ws_url)"
+    partner_app_url="$(admin_utility_url VITE_PARTNER_APP_URL http://localhost:8090 https://partner.homswag.com)"
+    signoz_url="$(admin_utility_url VITE_SIGNOZ_URL http://localhost:9080 https://signoz.homswag.com)"
+    portainer_url="$(admin_utility_url VITE_PORTAINER_URL https://localhost:9443 https://ports.homswag.com)"
+    monitor_url="$(admin_utility_url VITE_MONITOR_URL http://localhost:14318 https://monitor.homswag.com)"
 
     require_prod_url VITE_API_BASE_URL "$api_url"
     require_prod_url VITE_AUTH_API_BASE_URL "$login_url"
@@ -167,6 +223,12 @@ print_resolved_env() {
     require_prod_url VITE_BFF_BASE_URL "$bff_url"
     require_prod_url VITE_REPORTING_BASE_URL "$reporting_url"
     require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
+    require_prod_url VITE_PARTNER_APP_URL "$partner_app_url"
+    require_prod_url VITE_SIGNOZ_URL "$signoz_url"
+    require_prod_url VITE_PORTAINER_URL "$portainer_url"
+    require_prod_url VITE_MONITOR_URL "$monitor_url"
+    require_prod_url VITE_PARTNER_BFF_API_URL "$partner_api_url"
+    require_prod_url VITE_PARTNER_WS_URL "$partner_ws"
 
     echo -e "${BOLD}Resolved build env:${NC}"
     echo -e "  NODE_ENV              : ${BOLD}${NODE_ENV:-unset}${NC}"
@@ -178,10 +240,17 @@ print_resolved_env() {
     echo -e "  BFF_BASE_URL          : ${BOLD}${server_bff}${NC}"
     echo -e "  VITE_REPORTING_BASE_URL: ${BOLD}${reporting_url}${NC}"
     echo -e "  VITE_CUSTOMER_APP_URL : ${BOLD}${customer_app_url:-unset}${NC}"
+    echo -e "  VITE_PARTNER_APP_URL  : ${BOLD}${partner_app_url}${NC}"
+    echo -e "  VITE_SIGNOZ_URL       : ${BOLD}${signoz_url}${NC}"
+    echo -e "  VITE_PORTAINER_URL    : ${BOLD}${portainer_url}${NC}"
+    echo -e "  VITE_MONITOR_URL      : ${BOLD}${monitor_url}${NC}"
+    echo -e "  VITE_PARTNER_BFF_API_URL: ${BOLD}${partner_api_url}${NC}"
+    echo -e "  VITE_PARTNER_WS_URL   : ${BOLD}${partner_ws}${NC}"
     echo -e "  SERVER_IMAGE_TAG      : ${BOLD}${SERVER_IMAGE_TAG:-latest}${NC}"
     echo -e "  REPORTING_IMAGE_TAG   : ${BOLD}${REPORTING_IMAGE_TAG:-latest}${NC}"
     echo -e "  ADMIN_IMAGE_TAG       : ${BOLD}${ADMIN_IMAGE_TAG:-latest}${NC}"
     echo -e "  APP_IMAGE_TAG         : ${BOLD}${APP_IMAGE_TAG:-latest}${NC}"
+    echo -e "  PARTNER_IMAGE_TAG     : ${BOLD}${PARTNER_IMAGE_TAG:-latest}${NC}"
     echo -e "  KAFKA_IMAGE_TAG       : ${BOLD}${KAFKA_IMAGE_TAG:-latest}${NC}"
     echo -e "  NO_CACHE              : ${BOLD}${NO_CACHE}${NC}"
     echo ""
@@ -222,17 +291,26 @@ EOF
             ;;
         admin)
             local api_url login_url media_url reporting_url
+            local customer_app_url partner_app_url signoz_url portainer_url monitor_url
             api_url="$(frontend_api_url)"
             login_url="$(frontend_login_url)"
             media_url="$(frontend_media_url)"
             reporting_url="$(frontend_reporting_url)"
-            local customer_app_url="${VITE_CUSTOMER_APP_URL:-}"
+            customer_app_url="${VITE_CUSTOMER_APP_URL:-}"
+            partner_app_url="$(admin_utility_url VITE_PARTNER_APP_URL http://localhost:8090 https://partner.homswag.com)"
+            signoz_url="$(admin_utility_url VITE_SIGNOZ_URL http://localhost:9080 https://signoz.homswag.com)"
+            portainer_url="$(admin_utility_url VITE_PORTAINER_URL https://localhost:9443 https://ports.homswag.com)"
+            monitor_url="$(admin_utility_url VITE_MONITOR_URL http://localhost:14318 https://monitor.homswag.com)"
 
             require_prod_url VITE_API_BASE_URL "$api_url"
             require_prod_url VITE_AUTH_API_BASE_URL "$login_url"
             require_prod_url VITE_MEDIA_BASE_URL "$media_url"
             require_prod_url VITE_REPORTING_BASE_URL "$reporting_url"
             require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
+            require_prod_url VITE_PARTNER_APP_URL "$partner_app_url"
+            require_prod_url VITE_SIGNOZ_URL "$signoz_url"
+            require_prod_url VITE_PORTAINER_URL "$portainer_url"
+            require_prod_url VITE_MONITOR_URL "$monitor_url"
 
             cat > "$target_dir/.env.prod" <<EOF
 VITE_API_BASE_URL=$api_url
@@ -246,6 +324,33 @@ VITE_DEPLOYMENT_ENVIRONMENT=${VITE_DEPLOYMENT_ENVIRONMENT:-${DEPLOYMENT_ENVIRONM
 PUBLIC_API_BASE_URL=$api_url
 MEDIA_BASE_URL=$media_url
 VITE_CUSTOMER_APP_URL=$customer_app_url
+VITE_PARTNER_APP_URL=$partner_app_url
+VITE_SIGNOZ_URL=$signoz_url
+VITE_PORTAINER_URL=$portainer_url
+VITE_MONITOR_URL=$monitor_url
+EOF
+            cp "$target_dir/.env.prod" "$target_dir/.env.production"
+            ;;
+        partner)
+            local bff_api_url bff_base_url media_url ws_url
+            bff_api_url="$(partner_bff_api_url)"
+            bff_base_url="$(partner_bff_base_url)"
+            media_url="$(frontend_media_url)"
+            ws_url="$(partner_ws_url)"
+
+            require_prod_url VITE_PARTNER_BFF_API_URL "$bff_api_url"
+            require_prod_url VITE_PARTNER_BFF_BASE_URL "$bff_base_url"
+            require_prod_url VITE_MEDIA_BASE_URL "$media_url"
+            require_prod_url VITE_PARTNER_WS_URL "$ws_url"
+
+            cat > "$target_dir/.env.prod" <<EOF
+VITE_BFF_API_URL=$bff_api_url
+VITE_BFF_BASE_URL=$bff_base_url
+VITE_MEDIA_BASE_URL=$media_url
+VITE_WS_URL=$ws_url
+VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY:-}
+VITE_FEATURE_MAPS=${VITE_FEATURE_MAPS:-false}
+VITE_FEATURE_DIRECTIONS=${VITE_FEATURE_DIRECTIONS:-false}
 EOF
             cp "$target_dir/.env.prod" "$target_dir/.env.production"
             ;;
@@ -340,7 +445,7 @@ while [[ "$#" -gt 0 ]]; do
         *)
             if is_service "$1"; then
                 if [[ "$1" == "all" ]]; then
-                    SERVICES=(server reporting admin app kafka)
+                    SERVICES=(server reporting admin app partner kafka)
                 else
                     SERVICES+=("$1")
                 fi
@@ -387,7 +492,7 @@ IMAGE_REGISTRY="${IMAGE_REGISTRY%/}"
 PUSH_REGISTRY="${PUSH_REGISTRY%/}"
 
 if [[ "${#SERVICES[@]}" -eq 0 ]]; then
-    SERVICES=(server reporting admin app kafka)
+    SERVICES=(server reporting admin app partner kafka)
 fi
 
 if command -v docker &>/dev/null; then
@@ -403,6 +508,11 @@ require_source() {
     local service="$1"
     local deploy_repo="$SCRIPT_DIR/repos/$service"
     local workspace_repo="$WORKSPACE_DIR/$service"
+
+    if [[ "$service" == "partner" ]]; then
+        deploy_repo="$SCRIPT_DIR/repos/partner"
+        workspace_repo="$WORKSPACE_DIR/HomSwagTeam"
+    fi
 
     if [[ -d "$deploy_repo" ]]; then
         echo "$deploy_repo"
@@ -425,6 +535,7 @@ image_tag_for() {
         reporting) echo "${REPORTING_IMAGE_TAG:-latest}" ;;
         admin)     echo "${ADMIN_IMAGE_TAG:-latest}" ;;
         app)       echo "${APP_IMAGE_TAG:-latest}" ;;
+        partner)   echo "${PARTNER_IMAGE_TAG:-latest}" ;;
         kafka)     echo "${KAFKA_IMAGE_TAG:-latest}" ;;
     esac
 }
@@ -546,7 +657,7 @@ build_service() {
         args+=(--no-cache)
     fi
 
-    if [[ "$service" == "admin" || "$service" == "app" ]]; then
+    if [[ "$service" == "admin" || "$service" == "app" || "$service" == "partner" ]]; then
         local api_url login_url media_url
         api_url="$(frontend_api_url)"
         login_url="$(frontend_login_url)"
@@ -576,14 +687,42 @@ build_service() {
     fi
 
     if [[ "$service" == "admin" ]]; then
-        local reporting_url customer_app_url
+        local reporting_url customer_app_url partner_app_url signoz_url portainer_url monitor_url
         reporting_url="$(frontend_reporting_url)"
         customer_app_url="${VITE_CUSTOMER_APP_URL:-}"
+        partner_app_url="$(admin_utility_url VITE_PARTNER_APP_URL http://localhost:8090 https://partner.homswag.com)"
+        signoz_url="$(admin_utility_url VITE_SIGNOZ_URL http://localhost:9080 https://signoz.homswag.com)"
+        portainer_url="$(admin_utility_url VITE_PORTAINER_URL https://localhost:9443 https://ports.homswag.com)"
+        monitor_url="$(admin_utility_url VITE_MONITOR_URL http://localhost:14318 https://monitor.homswag.com)"
         require_prod_url VITE_REPORTING_BASE_URL "$reporting_url"
         require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
+        require_prod_url VITE_PARTNER_APP_URL "$partner_app_url"
+        require_prod_url VITE_SIGNOZ_URL "$signoz_url"
+        require_prod_url VITE_PORTAINER_URL "$portainer_url"
+        require_prod_url VITE_MONITOR_URL "$monitor_url"
         args+=(--build-arg "HS_REPORTING_URL=$reporting_url")
         args+=(--build-arg "HS_CUSTOMER_APP_URL=$customer_app_url")
+        args+=(--build-arg "HS_PARTNER_APP_URL=$partner_app_url")
+        args+=(--build-arg "HS_SIGNOZ_URL=$signoz_url")
+        args+=(--build-arg "HS_PORTAINER_URL=$portainer_url")
+        args+=(--build-arg "HS_MONITOR_URL=$monitor_url")
         args+=(--build-arg "HS_RUM_SERVICE_NAME=${VITE_ADMIN_RUM_SERVICE_NAME:-admin-app}")
+    fi
+
+    if [[ "$service" == "partner" ]]; then
+        local partner_api_url partner_base_url partner_ws_value
+        partner_api_url="$(partner_bff_api_url)"
+        partner_base_url="$(partner_bff_base_url)"
+        partner_ws_value="$(partner_ws_url)"
+        require_prod_url VITE_PARTNER_BFF_API_URL "$partner_api_url"
+        require_prod_url VITE_PARTNER_BFF_BASE_URL "$partner_base_url"
+        require_prod_url VITE_PARTNER_WS_URL "$partner_ws_value"
+        args+=(--build-arg "HS_PARTNER_BFF_API_URL=$partner_api_url")
+        args+=(--build-arg "HS_PARTNER_BFF_BASE_URL=$partner_base_url")
+        args+=(--build-arg "HS_PARTNER_WS_URL=$partner_ws_value")
+        args+=(--build-arg "HS_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY:-}")
+        args+=(--build-arg "HS_FEATURE_MAPS=${VITE_FEATURE_MAPS:-false}")
+        args+=(--build-arg "HS_FEATURE_DIRECTIONS=${VITE_FEATURE_DIRECTIONS:-false}")
     fi
 
     args+=("$context_dir")

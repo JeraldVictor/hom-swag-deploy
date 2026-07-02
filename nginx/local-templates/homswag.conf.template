@@ -11,6 +11,7 @@ map $http_origin $otel_cors_origin {
     default "";
     "http://localhost:8080" $http_origin;
     "http://localhost:5173" $http_origin;
+    "http://localhost:8090" $http_origin;
     "http://localhost:8088" $http_origin;
 }
 
@@ -24,6 +25,10 @@ upstream homswag_reporting {
 
 upstream homswag_admin {
     server admin:80;
+}
+
+upstream homswag_partner {
+    server partner:80;
 }
 
 upstream homswag_app {
@@ -134,6 +139,47 @@ server {
 
     location / {
         proxy_pass http://homswag_admin;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto http;
+    }
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${PARTNER_DOMAIN};
+
+    location /socket.io/ {
+        proxy_pass http://homswag_server;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${API_DOMAIN};
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto http;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+
+    location /api/ {
+        rewrite ^/api/(.*)$ /bff/field/$1 break;
+        proxy_pass http://homswag_server;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${API_DOMAIN};
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto http;
+        proxy_set_header X-Client-Type field;
+    }
+
+    location = /api {
+        return 308 /api/;
+    }
+
+    location / {
+        proxy_pass http://homswag_partner;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;

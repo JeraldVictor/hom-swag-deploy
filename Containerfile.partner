@@ -1,0 +1,40 @@
+# ── Stage 1: Build ────────────────────────────────────────────────────────────
+FROM node:22-alpine AS builder
+
+WORKDIR /app
+
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+COPY repos/partner/package.json repos/partner/pnpm-lock.yaml ./
+RUN printf 'onlyBuiltDependencies:\n  - esbuild\n  - simple-git-hooks\n' > pnpm-workspace.yaml
+RUN printf 'auto-install-peers=true\nshamefully-hoist=true\nonly-built-dependencies[]=esbuild\nonly-built-dependencies[]=simple-git-hooks\n' > .npmrc
+RUN pnpm install --no-frozen-lockfile --ignore-scripts \
+    && pnpm rebuild esbuild
+
+COPY repos/partner/ .
+
+ARG HS_PARTNER_BFF_API_URL=https://api.alpha.homswag.com/bff/field
+ARG HS_PARTNER_BFF_BASE_URL=https://api.alpha.homswag.com
+ARG HS_MEDIA_URL=https://api.alpha.homswag.com
+ARG HS_PARTNER_WS_URL=wss://api.alpha.homswag.com
+ARG HS_GOOGLE_MAPS_API_KEY=
+ARG HS_FEATURE_MAPS=false
+ARG HS_FEATURE_DIRECTIONS=false
+
+ENV NODE_OPTIONS="--max-old-space-size=4096" \
+    PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
+
+RUN printf 'VITE_BFF_API_URL=%s\nVITE_BFF_BASE_URL=%s\nVITE_MEDIA_BASE_URL=%s\nVITE_WS_URL=%s\nVITE_GOOGLE_MAPS_API_KEY=%s\nVITE_FEATURE_MAPS=%s\nVITE_FEATURE_DIRECTIONS=%s\n' \
+        "$HS_PARTNER_BFF_API_URL" "$HS_PARTNER_BFF_BASE_URL" "$HS_MEDIA_URL" "$HS_PARTNER_WS_URL" "$HS_GOOGLE_MAPS_API_KEY" "$HS_FEATURE_MAPS" "$HS_FEATURE_DIRECTIONS" > .env.prod \
+    && pnpm run build \
+    && rm -f .env.prod
+
+# ── Stage 2: Serve with nginx ─────────────────────────────────────────────────
+FROM nginx:alpine AS runner
+
+COPY --from=builder /app/dist /usr/share/nginx/html
+COPY nginx/admin.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
