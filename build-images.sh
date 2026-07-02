@@ -222,6 +222,7 @@ print_resolved_env() {
     require_prod_url VITE_MEDIA_BASE_URL "$media_url"
     require_prod_url VITE_BFF_BASE_URL "$bff_url"
     require_prod_url VITE_REPORTING_BASE_URL "$reporting_url"
+    require_prod_url VITE_REPORTING_SERVICE_URL "$reporting_url"
     require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
     require_prod_url VITE_PARTNER_APP_URL "$partner_app_url"
     require_prod_url VITE_SIGNOZ_URL "$signoz_url"
@@ -239,6 +240,7 @@ print_resolved_env() {
     echo -e "  VITE_BFF_BASE_URL     : ${BOLD}${bff_url}${NC}"
     echo -e "  BFF_BASE_URL          : ${BOLD}${server_bff}${NC}"
     echo -e "  VITE_REPORTING_BASE_URL: ${BOLD}${reporting_url}${NC}"
+    echo -e "  VITE_REPORTING_SERVICE_URL: ${BOLD}${reporting_url}${NC}"
     echo -e "  VITE_CUSTOMER_APP_URL : ${BOLD}${customer_app_url:-unset}${NC}"
     echo -e "  VITE_PARTNER_APP_URL  : ${BOLD}${partner_app_url}${NC}"
     echo -e "  VITE_SIGNOZ_URL       : ${BOLD}${signoz_url}${NC}"
@@ -262,7 +264,7 @@ write_frontend_env_files() {
 
     case "$service" in
         app)
-            local api_url login_url media_url bff_url server_bff
+        local api_url login_url media_url bff_url server_bff
             api_url="$(frontend_api_url)"
             login_url="$(frontend_login_url)"
             media_url="$(frontend_media_url)"
@@ -317,6 +319,7 @@ VITE_API_BASE_URL=$api_url
 VITE_AUTH_API_BASE_URL=$login_url
 VITE_MEDIA_BASE_URL=$media_url
 VITE_REPORTING_BASE_URL=$reporting_url
+VITE_REPORTING_SERVICE_URL=$reporting_url
 VITE_ENABLE_RUM=${VITE_ENABLE_RUM:-false}
 VITE_RUM_TRACES_ENDPOINT=${VITE_RUM_TRACES_ENDPOINT:-}
 VITE_RUM_SERVICE_NAME=${VITE_ADMIN_RUM_SERVICE_NAME:-admin-app}
@@ -701,6 +704,7 @@ build_service() {
         require_prod_url VITE_PORTAINER_URL "$portainer_url"
         require_prod_url VITE_MONITOR_URL "$monitor_url"
         args+=(--build-arg "HS_REPORTING_URL=$reporting_url")
+        args+=(--build-arg "HS_REPORTING_SERVICE_URL=$reporting_url")
         args+=(--build-arg "HS_CUSTOMER_APP_URL=$customer_app_url")
         args+=(--build-arg "HS_PARTNER_APP_URL=$partner_app_url")
         args+=(--build-arg "HS_SIGNOZ_URL=$signoz_url")

@@ -29,13 +29,27 @@ RUN apk add --no-cache ca-certificates tzdata
 # Copy binary from builder
 COPY --from=builder /app/reporting .
 
-# Create directory for temp files
-RUN mkdir -p /tmp/reports
-
 # Run as non-root user
 RUN adduser -D -u 1000 reporting
-USER reporting
+# Create directory for temp files
+ENV REPORTING_TEMP_DIR=/tmp/reports
+
+# Ensure mounted /tmp/reports always stays writable for the app user.
+RUN mkdir -p /tmp/reports && chown -R reporting:reporting /tmp/reports && chmod 775 /tmp/reports
+RUN cat > /entrypoint.sh <<'EOF'
+#!/bin/sh
+set -eu
+
+REPORTING_TEMP_DIR="${REPORTING_TEMP_DIR:-/tmp/reports}"
+
+mkdir -p "${REPORTING_TEMP_DIR}"
+chown -R reporting:reporting "${REPORTING_TEMP_DIR}" || true
+chmod 775 "${REPORTING_TEMP_DIR}" || true
+
+exec su -s /bin/sh -c "./reporting" reporting
+EOF
+RUN chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]
 
 EXPOSE 3003
-
-CMD ["./reporting"]

@@ -63,6 +63,8 @@ services:
       REPORTING_BUCKET: ${REPORTING_BUCKET:-reports}
     env_file:
       - ${DEPLOY_ENV_FILE:-.env.prod}
+    volumes:
+      - reporting-temp:/tmp/reports
     depends_on:
       kafka:
         condition: service_healthy
@@ -279,6 +281,7 @@ services:
 volumes:
   kafka-data:
   nginx-cache:
+  reporting-temp:
   portainer_data:
   signoz_data:
   signoz_clickhouse_data:

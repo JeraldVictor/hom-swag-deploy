@@ -42,6 +42,13 @@ ok()   { echo -e "${GREEN}[$(date '+%H:%M:%S')] \u2714${NC}  $*"; }
 warn() { echo -e "${YELLOW}[$(date '+%H:%M:%S')] \u26a0${NC}  $*"; }
 die()  { echo -e "${RED}[$(date '+%H:%M:%S')] \u2718${NC}  $*" >&2; exit 1; }
 
+is_truthy() {
+    case "${1:-}" in
+        true|1|yes|on|y|TRUE|YES|ON|Y) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
 # ── Parse global flags ─────────────────────────────────────────────────────────
 ENV_PROFILE="${DEPLOY_ENV:-prod}"
 COMMAND=""
@@ -119,6 +126,8 @@ while IFS= read -r line || [[ -n "$line" ]]; do
         export "$line"
     fi
 done < "$ENV_FILE"
+
+AUTO_SEED_REPORT_DEFINITIONS="${AUTO_SEED_REPORT_DEFINITIONS:-true}"
 
 # ── Discover compose binary ────────────────────────────────────────────────────
 if command -v docker &>/dev/null; then
@@ -567,6 +576,7 @@ cmd_safe_deploy() {
         log "No existing stack detected — performing standard deploy"
         cmd_up
         cmd_health
+        run_report_seed_if_enabled
         prune_images_after_deploy
         ok "Deploy complete."
         return
@@ -611,6 +621,7 @@ cmd_safe_deploy() {
         nginx
     reload_nginx
     cmd_health
+    run_report_seed_if_enabled
 
     prune_images_after_deploy
     ok "Graceful deploy complete."
@@ -630,6 +641,7 @@ cmd_deploy() {
         cmd_pull
         cmd_up
         cmd_health
+        run_report_seed_if_enabled
         # New stack is confirmed healthy before optional image cleanup.
         prune_images_after_deploy
         ok "Deploy complete."
@@ -913,6 +925,22 @@ cmd_seed() {
 # Non-destructively upsert report definitions used by the reporting dashboard.
 cmd_seed_reports() {
     cmd_seed --upsert --only=reports
+}
+
+run_report_seed_if_enabled() {
+    if ! is_truthy "${AUTO_SEED_REPORT_DEFINITIONS:-true}"; then
+        log "AUTO_SEED_REPORT_DEFINITIONS is disabled. Skipping report-definition seed."
+        return
+    fi
+
+    if ! $COMPOSE ps -q server >/dev/null 2>&1 || ! $COMPOSE ps -q server | grep -q .; then
+        warn "Server service is not running; skipping report-definition seed."
+        warn "Run './deploy.sh seed-reports' after the stack is up."
+        return
+    fi
+
+    log "Running report-definition seed (upsert mode) ..."
+    cmd_seed_reports
 }
 
 # =============================================================================
