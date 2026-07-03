@@ -187,6 +187,48 @@ server {
     ssl_session_timeout 1d;
     ssl_protocols TLSv1.2 TLSv1.3;
 
+    client_max_body_size 50m;
+
+    location /socket.io/ {
+        proxy_pass http://homswag_server;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${API_DOMAIN};
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
+
+    location /bff/field/ {
+        proxy_pass http://homswag_server;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${API_DOMAIN};
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Client-Type field;
+    }
+
+    location = /bff/field {
+        return 308 /bff/field/;
+    }
+
+    location /api/ {
+        rewrite ^/api/(.*)$ /bff/field/$1 break;
+        proxy_pass http://homswag_server;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${API_DOMAIN};
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Client-Type field;
+    }
+
+    location = /api {
+        return 308 /api/;
+    }
+
     location / {
         proxy_pass http://homswag_partner;
         proxy_http_version 1.1;
@@ -279,6 +321,19 @@ server {
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 1d;
     ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 50m;
+
+    location /socket.io/ {
+        proxy_pass http://homswag_server;
+        proxy_http_version 1.1;
+        proxy_set_header Host ${API_DOMAIN};
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+    }
 
     location /api/homepage {
         proxy_pass http://homswag_app;
