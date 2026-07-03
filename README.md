@@ -540,6 +540,21 @@ including the frontend URLs baked into the `admin` and `app` images. For
 production builds, the script refuses to continue if a required frontend URL is
 missing or points to `localhost`, `127.0.0.1`, or `0.0.0.0`.
 
+When the selected services include `reporting`, `build-images.sh` runs the
+reporting Go tests before any image is built. The gate runs `go test ./...` and
+the seeded Mongo aggregation integration tests. Local builds derive the test
+Mongo URI from `.env.local` (`127.0.0.1:${MONGO_HOST_PORT}`), so local MongoDB
+must be running first. Production builds require an explicit staging/test URI:
+
+```bash
+REPORTING_BUILD_TEST_MONGODB_URI="mongodb://user:pass@host:27017/admin?authSource=admin" \
+  ./build-images.sh --env prod reporting --push
+```
+
+Use `REPORTING_BUILD_TEST_MONGODB_URI` or `REPORTING_INTEGRATION_MONGODB_URI`
+for a disposable/staging database only. The integration tests create and drop a
+temporary database; they must not be pointed at production MongoDB.
+
 For production deploys, `.env.prod` sets:
 
 ```bash

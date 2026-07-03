@@ -261,6 +261,67 @@ print_resolved_env() {
     echo ""
 }
 
+services_include() {
+    local needle="$1"
+    local service
+    for service in "${SERVICES[@]}"; do
+        if [[ "$service" == "$needle" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+reporting_integration_mongodb_uri() {
+    if [[ -n "${REPORTING_INTEGRATION_MONGODB_URI:-}" ]]; then
+        echo "$REPORTING_INTEGRATION_MONGODB_URI"
+        return
+    fi
+    if [[ -n "${REPORTING_BUILD_TEST_MONGODB_URI:-}" ]]; then
+        echo "$REPORTING_BUILD_TEST_MONGODB_URI"
+        return
+    fi
+    if ! is_prod_profile; then
+        local mongo_user="${MONGO_USER:-admin}"
+        local mongo_password="${MONGO_PASSWORD:-password}"
+        local mongo_host_port="${MONGO_HOST_PORT:-${MONGO_PORT:-27017}}"
+        echo "mongodb://${mongo_user}:${mongo_password}@127.0.0.1:${mongo_host_port}/admin?authSource=admin"
+    fi
+}
+
+run_reporting_test_gate() {
+    if ! services_include reporting; then
+        return
+    fi
+    local reporting_source
+    reporting_source="$(require_source reporting)"
+    local reporting_test_gocache="${REPORTING_TEST_GOCACHE:-$reporting_source/.gocache}"
+    mkdir -p "$reporting_test_gocache"
+
+    command -v go &>/dev/null || die "go is required to build the reporting image because tests must pass before image build"
+
+    echo ""
+    echo -e "${BOLD}━━━  Testing reporting before image build  ━━━${NC}"
+    log "Source: $reporting_source"
+
+    log "Running reporting Go unit suite"
+    (cd "$reporting_source" && GOCACHE="$reporting_test_gocache" go test ./...)
+    ok "Reporting Go unit suite passed"
+
+    local integration_uri
+    integration_uri="$(reporting_integration_mongodb_uri)"
+    if [[ -z "$integration_uri" ]]; then
+        die "REPORTING_BUILD_TEST_MONGODB_URI or REPORTING_INTEGRATION_MONGODB_URI is required for production reporting image builds. Use a staging/test MongoDB URI, not production."
+    fi
+
+    log "Running reporting Mongo aggregation integration suite"
+    (
+        cd "$reporting_source"
+        GOCACHE="$reporting_test_gocache" REPORTING_INTEGRATION_MONGODB_URI="$integration_uri" go test ./internal/reports/static -run MongoIntegration -count=1
+    )
+    ok "Reporting Mongo aggregation integration suite passed"
+}
+
 write_frontend_env_files() {
     local service="$1"
     local target_dir="$2"
@@ -735,6 +796,8 @@ echo ""
 print_resolved_env
 
 ensure_push_registry_auth
+
+run_reporting_test_gate
 
 CONTEXT_DIR="$(prepare_context)"
 
