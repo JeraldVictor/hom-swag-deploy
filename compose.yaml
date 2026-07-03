@@ -84,8 +84,8 @@ services:
     restart: unless-stopped
     privileged: true
     volumes:
-      - signoz_data:/var/lib/signoz
-      - signoz_clickhouse_data:/var/lib/clickhouse
+      - ${SIGNOZ_DATA_SOURCE:-signoz_data}:/var/lib/signoz
+      - ${SIGNOZ_CLICKHOUSE_DATA_SOURCE:-signoz_clickhouse_data}:/var/lib/clickhouse
     ports:
       - "${SIGNOZ_HTTP_BIND:-127.0.0.1}:${SIGNOZ_HTTP_PORT:-8080}:8080"
       - "${SIGNOZ_OTLP_GRPC_BIND:-127.0.0.1}:${SIGNOZ_OTLP_GRPC_PORT:-4317}:4317"
@@ -160,7 +160,7 @@ services:
     # overriding with /bin/sh causes startup errors in some versions.
     volumes:
       - ${PORTAINER_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
-      - portainer_data:/data
+      - ${PORTAINER_DATA_SOURCE:-portainer_data}:/data
     ports:
       - "${PORTAINER_HTTP_BIND:-127.0.0.1}:${PORTAINER_HTTP_PORT:-8000}:8000"
       - "${PORTAINER_HTTPS_BIND:-127.0.0.1}:${PORTAINER_HTTPS_PORT:-9443}:9443"

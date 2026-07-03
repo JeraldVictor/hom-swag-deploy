@@ -201,6 +201,25 @@ ensure_registry_auth() {
     warn "Use: echo '<github-token>' | docker login ghcr.io -u '<github-user>' --password-stdin"
 }
 
+ensure_host_mount_dir() {
+    local label="$1"
+    local path="${2:-}"
+
+    [[ -n "$path" ]] || return 0
+    case "$path" in
+        /*|./*|../*) ;;
+        *) return 0 ;;
+    esac
+
+    mkdir -p "$path" || die "Failed to create ${label} directory: ${path}"
+}
+
+ensure_persistent_mounts() {
+    ensure_host_mount_dir "Portainer data" "${PORTAINER_DATA_SOURCE:-}"
+    ensure_host_mount_dir "SigNoz data" "${SIGNOZ_DATA_SOURCE:-}"
+    ensure_host_mount_dir "SigNoz ClickHouse data" "${SIGNOZ_CLICKHOUSE_DATA_SOURCE:-}"
+}
+
 ensure_nginx_certs() {
     local certs_path="${NGINX_CERTS_PATH:-./nginx/certs}"
     [[ "$certs_path" = /* ]] || certs_path="${SCRIPT_DIR}/${certs_path}"
@@ -319,6 +338,7 @@ cmd_pull() {
 cmd_up() {
     echo ""
     echo -e "${BOLD}━━━  Starting services  ━━━${NC}"
+    ensure_persistent_mounts
     if [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]; then
         ensure_nginx_certs
     fi

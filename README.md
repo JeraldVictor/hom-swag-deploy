@@ -337,6 +337,9 @@ SIGNOZ_HTTP_PORT=8080
 SIGNOZ_HTTP_BIND=127.0.0.1
 PORTAINER_HTTPS_PORT=9443
 PORTAINER_HTTPS_BIND=127.0.0.1
+PORTAINER_DATA_SOURCE=/app/data/portainer
+SIGNOZ_DATA_SOURCE=/app/data/signoz
+SIGNOZ_CLICKHOUSE_DATA_SOURCE=/app/data/signoz-clickhouse
 SIGNOZ_RETENTION_DAYS=7
 SIGNOZ_MAX_BYTES=5368709120
 ```
@@ -357,6 +360,22 @@ Production access:
 Production SigNoz and Portainer direct host port defaults bind to `127.0.0.1`.
 Keep those defaults unless you intentionally need raw host-port access; public
 access should go through nginx and the TLS domains above.
+
+Production SigNoz and Portainer state should be host-mounted under `/app/data`
+on the VPS:
+
+```bash
+PORTAINER_DATA_SOURCE=/app/data/portainer
+SIGNOZ_DATA_SOURCE=/app/data/signoz
+SIGNOZ_CLICKHOUSE_DATA_SOURCE=/app/data/signoz-clickhouse
+CLEAN_REMOVE_VOLUMES=false
+```
+
+These paths preserve the SigNoz root user/org, ClickHouse telemetry, and
+Portainer database across container recreation and clean deploys. If production
+was previously running named volumes, copy the old volume contents into these
+directories before recreating the containers to keep existing login state and
+telemetry.
 
 Browser RUM collection can use either the existing API domain trace endpoint or
 the dedicated monitor domain:
@@ -597,8 +616,9 @@ path.
 ./deploy.sh --env prod clean
 ```
 
-In production, `CLEAN_REMOVE_VOLUMES=true` also removes compose-managed named
-volumes. Host bind mounts such as `/podLogs/...` are not deleted by Docker.
+In production, keep `CLEAN_REMOVE_VOLUMES=false` so clean deploys do not delete
+compose-managed state. Host bind mounts such as `/app/data/...` and
+`/podLogs/...` are not deleted by Docker.
 
 ### Deploy only one app
 
