@@ -322,6 +322,66 @@ run_reporting_test_gate() {
     ok "Reporting Mongo aggregation integration suite passed"
 }
 
+has_test_files() {
+    local source="$1"
+    rg --files "$source" \
+        | rg -q '(/|^)(__tests__|tests?)/|\.spec\.[jt]sx?$|\.spec\.[cm]?jsx?$|\.test\.[jt]sx?$|\.test\.[cm]?jsx?$'
+}
+
+npm_script_exists() {
+    local source="$1"
+    local script_name="$2"
+    [[ -f "$source/package.json" ]] || return 1
+    rg -q "\"${script_name}\"[[:space:]]*:" "$source/package.json"
+}
+
+run_node_test_gate() {
+    local service="$1"
+    local source="$2"
+    local test_cmd=()
+
+    if ! has_test_files "$source"; then
+        warn "Skipping ${service} tests: no test files detected"
+        return
+    fi
+
+    command -v pnpm &>/dev/null || die "pnpm is required to run ${service} tests before image build"
+
+    if npm_script_exists "$source" "test"; then
+        test_cmd=(pnpm test)
+    elif npm_script_exists "$source" "test:unit"; then
+        test_cmd=(pnpm test:unit)
+    elif rg -q '"vitest"' "$source/package.json"; then
+        test_cmd=(pnpm exec vitest run)
+    else
+        warn "Skipping ${service} tests: package has tests but no known runnable test command"
+        return
+    fi
+
+    echo ""
+    echo -e "${BOLD}━━━  Testing ${service} before image build  ━━━${NC}"
+    log "Source: $source"
+    log "Command: ${test_cmd[*]}"
+    (cd "$source" && "${test_cmd[@]}")
+    ok "${service} test suite passed"
+}
+
+run_test_gate_for_service() {
+    local service="$1"
+
+    case "$service" in
+        server|admin|app|partner)
+            run_node_test_gate "$service" "$(require_source "$service")"
+            ;;
+        reporting)
+            run_reporting_test_gate
+            ;;
+        *)
+            warn "No test gate configured for ${service}; skipping"
+            ;;
+    esac
+}
+
 write_frontend_env_files() {
     local service="$1"
     local target_dir="$2"
@@ -797,7 +857,9 @@ print_resolved_env
 
 ensure_push_registry_auth
 
-run_reporting_test_gate
+for service in "${SERVICES[@]}"; do
+    run_test_gate_for_service "$service"
+done
 
 CONTEXT_DIR="$(prepare_context)"
 
