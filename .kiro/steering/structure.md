@@ -21,16 +21,20 @@ deploy/
 ## Service Architecture
 
 ### Infrastructure Services
-- **mongodb**: Data persistence (homswag database).
-- **redis**: Caching and real-time session management.
-- **minio**: S3-compatible object storage for media and uploads.
 - **kafka**: Event/message broker used by reporting/event workflows.
+- **otel-collector**: OpenTelemetry collector for signal forwarding.
+- **signoz**: Tracing/metrics storage and UI.
+- **portainer**: Operational dashboard for container management.
+- **nginx**: Public TLS/router entrypoint for HTTP(S) traffic.
+- **signoz-retention**: Retention helper for Signoz clickhouse data.
+- **certbot**: Optional certificate automation profile.
 
 ### Application Services
-- **server**: The central backend API. Mounts environment variables, uploads, and logs.
-- **reporting**: Separate reporting service image, connected to MongoDB, MinIO, and Kafka.
+- **server**: Central backend API. Mounts environment variables, uploads, and logs.
+- **reporting**: Separate reporting service image, connected to Kafka and MinIO-compatible object storage.
 - **admin**: The administrative dashboard (served via Nginx inside the container).
 - **app**: The user-facing web/mobile application.
+- **partner**: Mobile/web partner field-app dashboard.
 
 ## Key Files & Roles
 
@@ -41,11 +45,12 @@ deploy/
   - `cmd_safe_deploy`: Orchestrates zero-downtime swaps using canary containers.
   - `cmd_health`: Validates `/health` endpoints for Server and connectivity for infra/app services.
 - **`.env.*`**:
-  - `SERVER_PORT`, `ADMIN_PORT`, `APP_PORT`, `REPORTING_PORT`, `KAFKA_PORT`: Define host-side port bindings.
+  - `SERVER_PORT`, `ADMIN_PORT`, `APP_PORT`, `PARTNER_PORT`, `REPORTING_PORT`, `KAFKA_PORT`: Define host-side port bindings.
   - `*_DATA_SOURCE`: Allows switching between named volumes and host bind-mounts.
   - `*_IMAGE_TAG`: Controls which version of the images to pull.
+  - `IMAGE_REGISTRY`, `PUSH_REGISTRY`: Control registry namespace for image pulls/pushes.
 
 ## Data Persistence
 
-- **Volumes**: Named volumes (`mongodb-data`, `mongodb-config`, `redis-data`, `minio-data`, `kafka-data`) are used by default to ensure data survives container removals.
+- **Volumes**: Named volumes (`kafka-data`, `nginx-cache`, `reporting-temp`, `portainer_data`, `signoz_data`, `signoz_clickhouse_data`) are used by default to preserve runtime state.
 - **Mounts**: The `server` service mounts `./uploads` and `./logs` from the host for direct access and persistence.

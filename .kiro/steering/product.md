@@ -1,6 +1,6 @@
 # Deployment Overview
 
-The `deploy` workspace provides a unified environment for running the entire HomSwag platform using Docker/Podman Compose. It manages the lifecycle of infrastructure services (MongoDB, Redis, MinIO, Kafka) and application services (Server, Reporting, Admin, App).
+The `deploy` workspace provides a unified environment for running the HomSwag platform using Docker/Podman Compose. It manages the lifecycle of runtime application services (Server, Reporting, Admin, App, Partner) and platform services (Kafka, observability, and reverse proxy tooling).
 
 ## Key Components
 
@@ -16,10 +16,10 @@ The `deploy` workspace provides a unified environment for running the entire Hom
 
 ## Deployment Strategy
 
-- **Image-Based**: Services are deployed using pre-built images pulled from Docker Hub by default. Release builds can also be pushed to DigitalOcean Container Registry with `build-images.sh --push`.
+- **Image-Based**: Services are deployed using pre-built images pulled from configured registries (default: `ghcr.io/jeraldvictor/...`). Builds can be pushed with `build-images.sh --push` to the configured `PUSH_REGISTRY`.
 - **Zero-Downtime (Prod)**: The `prod` profile uses a "canary" strategy where new containers are started and health-checked on temporary ports before swapping with the live containers.
-- **Infrastructure**: Shared MongoDB, Redis, MinIO, and Kafka instances managed as part of the compose stack.
-- **Reverse Proxy**: Typically sits in front of the stack (e.g., Nginx) to handle TLS and routing to the specific ports (`3000`, `3001`, `3002`, and reporting on `3003` when exposed).
+- **Infrastructure**: Messaging and observability services (Kafka, OpenTelemetry, Signoz, Portainer, Nginx) are part of the compose stack, while persistent platforms (MongoDB/Redis/MinIO/Object storage) are typically externalized through environment variables.
+- **Reverse Proxy**: Nginx routes traffic to server/admin/app/partner/reporting surfaces and hosts monitoring endpoints.
 
 ## Target Environments
 

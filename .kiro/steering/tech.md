@@ -5,42 +5,44 @@
 - **Docker Compose**: Version 2.x+ (using `compose.yaml`).
 - **Container Runtime**: Podman or Docker (script auto-detects).
 - **Base Images**:
-  - `mongo:8` (Infrastructure)
-  - `redis:7-alpine` (Infrastructure)
-  - `minio/minio:latest` (Infrastructure)
-  - `apache/kafka:latest` (Infrastructure)
-  - `docker.io/jeraldvictor/hom-swag-*` (Application images pulled by deploy)
-  - `registry.digitalocean.com/homswag-repo/hom-swag-*` (Optional push target from `build-images.sh --push`)
+  - `ghcr.io/jeraldvictor/hom-swag-*` (Default application images pulled by deploy)
+  - `docker.io/apache/kafka:latest` (Kafka broker; `KAFKA_IMAGE`)
+  - `docker.io/nginx:1.27-alpine` (Reverse proxy)
+  - `signoz/signoz-standalone:latest` (Tracing stack)
+  - `otel/opentelemetry-collector-contrib:0.129.1` (OpenTelemetry collector)
+  - `portainer/portainer-ce:2.30.1` (Container operations UI)
+  - `docker.io/certbot/certbot:latest` (Optional certbot profile)
 
 ## Deployment Scripting
 
 - **Bash**: 3.2+ (Compatible with macOS and Linux).
 - **cURL**: For health check validations.
 - **grep/sed**: For environment variable parsing and image tag resolution.
-- **Nginx**: Used by frontend containers and deployment templates for serving Admin/App assets and proxy routing.
+- **Nginx**: Used by frontend containers and deployment templates for serving Admin/App/Partner traffic through proxy routing.
 
 ## Networking & Security
 
 - **Docker Bridge Network**: `homswag-net` for internal service-to-service communication.
 - **Port Mapping**:
-  - `3000`: Server API
-  - `3001`: Admin Dashboard
-  - `3002`: User App
-  - `3003`: Reporting service
-  - `27017`: MongoDB (optional)
+  - `3000`: Server/API, reporting, and app listeners (host mappings controlled by `*_PORT` vars)
+  - `80`: Admin dashboard and Partner app frontend entrypoints
+  - `8080`: Signoz UI when enabled by `SIGNOZ_HTTP_PORT`
   - `9094`: Kafka external listener (optional)
-  - `9000/9001`: MinIO API/Console
+  - `8000/9443`: Portainer UI
+  - `14318`: OTEL collector HTTP
+  - `13133`: OTEL collector health
 - **JWT**: Token-based authentication for Server and BFF.
 - **Kafka**: Internal broker advertised as `kafka:9092`; external local access defaults to `127.0.0.1:9094`.
-- **SSL/TLS**: Handled externally (e.g., Nginx reverse proxy) or via `MINIO_USE_SSL`.
+- **SSL/TLS**: Terminated at Nginx/public proxy or via certificate tooling.
 - **Frontend Runtime Config**: Nginx templates live in `nginx/templates/`; build-time `VITE_*` values still require rebuilding images.
 
 ## Infrastructure Versions
 
-- **MongoDB**: 8.0
-- **Redis**: 7.x
-- **MinIO**: S3 API Compatible
-- **Kafka**: Apache Kafka latest image
+- **Kafka**: Apache Kafka latest image (overridable with `KAFKA_SOURCE_IMAGE`/`KAFKA_IMAGE`)
+- **Nginx**: `docker.io/nginx:1.27-alpine`
+- **Signoz**: `signoz/signoz-standalone:latest`
+- **OpenTelemetry**: `otel/opentelemetry-collector-contrib:0.129.1`
+- **Portainer**: `portainer/portainer-ce:2.30.1`
 
 ## Environment Variables
 
@@ -49,4 +51,4 @@ The deployment relies on a specific set of environment variables defined in `.en
 2.  **Server Container**: To configure the backend runtime (DB URIs, secrets, feature flags).
 3.  **App Container**: For server-side rendering configurations.
 
-*Note: VITE_* variables are baked into Admin and App images at build time and cannot be changed via the deployment script without rebuilding the images.*
+*Note: `VITE_*` variables are baked into Admin, App, and Partner images at build time and cannot be changed via the deployment script without rebuilding the images.*
