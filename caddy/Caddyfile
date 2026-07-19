@@ -130,9 +130,9 @@
 
 	redir /bff/field /bff/field/ 308
 
-	handle /api/* {
-		uri strip_prefix /api
-		rewrite * /bff/field{path}
+	@partnerApi path_regexp partnerApi ^/api/(.*)$
+	handle @partnerApi {
+		rewrite * /bff/field/{re.partnerApi.1}
 		reverse_proxy server:3000 {
 			header_up Host {$API_DOMAIN}
 			header_up X-Client-Type field
@@ -238,9 +238,9 @@
 		}
 	}
 
-	handle /api/* {
-		uri strip_prefix /api
-		rewrite * /bff{path}
+	@customerApi path_regexp customerApi ^/api/(.*)$
+	handle @customerApi {
+		rewrite * /bff/{re.customerApi.1}
 		reverse_proxy server:3000 {
 			header_up Host {$API_DOMAIN}
 			header_up X-Client-Type web
