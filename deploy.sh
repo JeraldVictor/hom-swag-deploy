@@ -188,6 +188,7 @@ if [[ "$LOCAL_HEALTH_HOST" == "0.0.0.0" ]]; then
     LOCAL_HEALTH_HOST="127.0.0.1"
 fi
 APP_DOMAIN="${APP_DOMAIN:-homswag.com}"
+WWW_APP_DOMAIN="${WWW_APP_DOMAIN:-www.homswag.com}"
 ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.homswag.com}"
 API_DOMAIN="${API_DOMAIN:-api.alpha.homswag.com}"
 REPORTING_DOMAIN="${REPORTING_DOMAIN:-reporting.alpha.homswag.com}"

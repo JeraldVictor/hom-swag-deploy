@@ -180,6 +180,10 @@
 	}
 }
 
+{$WWW_APP_DOMAIN} {
+	redir https://{$APP_DOMAIN}{uri} 308
+}
+
 {$APP_DOMAIN} {
 	encode zstd gzip
 	request_body {
