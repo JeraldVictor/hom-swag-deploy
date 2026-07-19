@@ -9,6 +9,8 @@ secrets/
 .env
 .env.prod
 
+caddy/data/
+caddy/config/
 nginx/certs/
 
 # OS

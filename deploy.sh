@@ -22,7 +22,7 @@
 #   ./deploy.sh exec <svc> -- <cmd>  # run a one-off command in container
 #   ./deploy.sh status               # show running containers
 #   ./deploy.sh health               # validate service HTTP endpoints
-#   ./deploy.sh certs                # issue/renew trusted Let's Encrypt TLS certs
+#   ./deploy.sh certs                # show Caddy-managed TLS certificate status
 # =============================================================================
 set -euo pipefail
 
@@ -128,6 +128,12 @@ while IFS= read -r line || [[ -n "$line" ]]; do
 done < "$ENV_FILE"
 
 AUTO_SEED_REPORT_DEFINITIONS="${AUTO_SEED_REPORT_DEFINITIONS:-true}"
+PROXY_STACK="${PROXY_STACK:-caddy}"
+case "$PROXY_STACK" in
+    caddy|nginx) ;;
+    *) die "Invalid PROXY_STACK='$PROXY_STACK'. Use: caddy | nginx" ;;
+esac
+PROXY_SERVICE="$PROXY_STACK"
 
 # ── Discover compose binary ────────────────────────────────────────────────────
 if command -v docker &>/dev/null; then
@@ -154,12 +160,16 @@ else
 fi
 
 COMPOSE_FILES="-f compose.yaml"
+if [[ "$PROXY_STACK" == "nginx" ]]; then
+    [[ -f "compose.nginx.yaml" ]] || die "compose.nginx.yaml not found. nginx fallback requires the nginx overlay."
+    COMPOSE_FILES="$COMPOSE_FILES -f compose.nginx.yaml"
+fi
 if [[ "$ENV_PROFILE" == "local" ]]; then
     [[ -f "compose.local.yaml" ]] || die "compose.local.yaml not found. Local deploy requires the local compose override."
     COMPOSE_FILES="$COMPOSE_FILES -f compose.local.yaml"
 fi
 
-COMPOSE="$COMPOSE_BIN --env-file $ENV_FILE $COMPOSE_FILES"
+COMPOSE="$COMPOSE_BIN --profile $PROXY_STACK --env-file $ENV_FILE $COMPOSE_FILES"
 
 # ── Port defaults (overridden by env file if set) ──────────────────────────────
 SERVER_PORT="${SERVER_PORT:-3000}"
@@ -167,10 +177,18 @@ ADMIN_PORT="${ADMIN_PORT:-3001}"
 APP_PORT="${APP_PORT:-3002}"
 PARTNER_PORT="${PARTNER_PORT:-3004}"
 REPORTING_PORT="${REPORTING_PORT:-3003}"
-NGINX_HTTP_PORT="${NGINX_HTTP_PORT:-80}"
-NGINX_HTTPS_PORT="${NGINX_HTTPS_PORT:-443}"
-APP_DOMAIN="${APP_DOMAIN:-alpha.homswag.com}"
-ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.alpha.homswag.com}"
+CADDY_HTTP_PORT="${CADDY_HTTP_PORT:-${NGINX_HTTP_PORT:-80}}"
+CADDY_HTTPS_PORT="${CADDY_HTTPS_PORT:-${NGINX_HTTPS_PORT:-443}}"
+PROXY_HTTPS_PORT="$CADDY_HTTPS_PORT"
+if [[ "$PROXY_STACK" == "nginx" ]]; then
+    PROXY_HTTPS_PORT="${NGINX_HTTPS_PORT:-443}"
+fi
+LOCAL_HEALTH_HOST="${HOST_BIND_ADDRESS:-127.0.0.1}"
+if [[ "$LOCAL_HEALTH_HOST" == "0.0.0.0" ]]; then
+    LOCAL_HEALTH_HOST="127.0.0.1"
+fi
+APP_DOMAIN="${APP_DOMAIN:-homswag.com}"
+ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.homswag.com}"
 API_DOMAIN="${API_DOMAIN:-api.alpha.homswag.com}"
 REPORTING_DOMAIN="${REPORTING_DOMAIN:-reporting.alpha.homswag.com}"
 PARTNER_DOMAIN="${PARTNER_DOMAIN:-partner.homswag.com}"
@@ -215,106 +233,29 @@ ensure_host_mount_dir() {
 }
 
 ensure_persistent_mounts() {
+    ensure_host_mount_dir "Caddy data" "${CADDY_DATA_SOURCE:-}"
+    ensure_host_mount_dir "Caddy config" "${CADDY_CONFIG_SOURCE:-}"
     ensure_host_mount_dir "Portainer data" "${PORTAINER_DATA_SOURCE:-}"
     ensure_host_mount_dir "SigNoz data" "${SIGNOZ_DATA_SOURCE:-}"
     ensure_host_mount_dir "SigNoz ClickHouse data" "${SIGNOZ_CLICKHOUSE_DATA_SOURCE:-}"
 }
 
-ensure_nginx_certs() {
-    local certs_path="${NGINX_CERTS_PATH:-./nginx/certs}"
-    [[ "$certs_path" = /* ]] || certs_path="${SCRIPT_DIR}/${certs_path}"
-
-    local domain
-    for domain in "$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$PARTNER_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN"; do
-        local cert_dir="${certs_path}/${domain}"
-        local cert_file="${cert_dir}/fullchain.pem"
-        local key_file="${cert_dir}/privkey.pem"
-
-        if [[ -s "$cert_file" && -s "$key_file" ]]; then
-            continue
-        fi
-
-        warn "Missing TLS certificate for ${domain}; creating temporary self-signed cert"
-        mkdir -p "$cert_dir"
-        openssl req -x509 -nodes -newkey rsa:2048 -days 7 \
-            -subj "/CN=${domain}" \
-            -addext "subjectAltName=DNS:${domain}" \
-            -keyout "$key_file" \
-            -out "$cert_file" >/dev/null 2>&1 || die "Failed to create temporary TLS certificate for ${domain}"
-    done
-}
-
-copy_letsencrypt_cert() {
-    local domain="$1"
-    local certs_path="${NGINX_CERTS_PATH:-./nginx/certs}"
-    [[ "$certs_path" = /* ]] || certs_path="${SCRIPT_DIR}/${certs_path}"
-
-    local source_dir="${SCRIPT_DIR}/nginx/letsencrypt/live/${domain}"
-    local target_dir="${certs_path}/${domain}"
-
-    [[ -s "${source_dir}/fullchain.pem" && -s "${source_dir}/privkey.pem" ]] || \
-        die "Let's Encrypt did not create expected cert files for ${domain}"
-
-    mkdir -p "$target_dir"
-    cp -L "${source_dir}/fullchain.pem" "${target_dir}/fullchain.pem"
-    cp -L "${source_dir}/privkey.pem" "${target_dir}/privkey.pem"
-}
-
-verify_trusted_cert() {
-    local domain="$1"
-    local certs_path="${NGINX_CERTS_PATH:-./nginx/certs}"
-    [[ "$certs_path" = /* ]] || certs_path="${SCRIPT_DIR}/${certs_path}"
-
-    local cert_file="${certs_path}/${domain}/fullchain.pem"
-    [[ -s "$cert_file" ]] || die "Missing installed certificate for ${domain}"
-
-    local subject issuer
-    subject="$(openssl x509 -in "$cert_file" -noout -subject)"
-    issuer="$(openssl x509 -in "$cert_file" -noout -issuer)"
-
-    if [[ "$subject" == "$issuer" ]]; then
-        die "Installed certificate for ${domain} is self-signed. Check Certbot output and DNS/port 80 reachability."
-    fi
-
-    if ! openssl x509 -in "$cert_file" -noout -checkend 1209600 >/dev/null; then
-        die "Installed certificate for ${domain} expires within 14 days."
-    fi
-}
-
 cmd_certs() {
     echo ""
-    echo -e "${BOLD}━━━  Issuing trusted TLS certificates  ━━━${NC}"
+    if [[ "$PROXY_STACK" == "nginx" ]]; then
+        echo -e "${BOLD}━━━  nginx TLS certificate status  ━━━${NC}"
+        warn "nginx fallback expects certificates in NGINX_CERTS_PATH=${NGINX_CERTS_PATH:-./nginx/certs}."
+        warn "Use the existing nginx/certs layout before switching production traffic to nginx."
+        return
+    fi
 
-    [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]] || \
-        warn "Issuing public Let's Encrypt certs for non-prod profile '${ENV_PROFILE}'"
-
-    local email="${LETSENCRYPT_EMAIL:-}"
-    [[ -n "$email" ]] || die "Set LETSENCRYPT_EMAIL in ${ENV_FILE} before issuing certificates."
-
-    mkdir -p "${SCRIPT_DIR}/nginx/certbot" "${SCRIPT_DIR}/nginx/letsencrypt"
-    ensure_nginx_certs
-
-    log "Starting nginx so Let's Encrypt can reach HTTP-01 challenge paths ..."
-    $COMPOSE up -d nginx
-
-    local domains=("$APP_DOMAIN" "$ADMIN_DOMAIN" "$API_DOMAIN" "$REPORTING_DOMAIN" "$PARTNER_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN")
-    local domain
-    for domain in "${domains[@]}"; do
-        log "Requesting certificate for: ${domain}"
-        $COMPOSE --profile certbot run --rm certbot certonly \
-            --webroot \
-            --webroot-path /var/www/certbot \
-            --email "$email" \
-            --agree-tos \
-            --no-eff-email \
-            --keep-until-expiring \
-            -d "$domain"
-        copy_letsencrypt_cert "$domain"
-        verify_trusted_cert "$domain"
-    done
-
-    reload_nginx
-    ok "Trusted TLS certificates installed."
+    echo -e "${BOLD}━━━  Caddy TLS certificate status  ━━━${NC}"
+    log "Caddy obtains and renews public TLS certificates automatically when DNS points at this host and ports 80/443 are reachable."
+    $COMPOSE up -d "$PROXY_SERVICE"
+    reload_proxy
+    if ! $COMPOSE exec -T "$PROXY_SERVICE" caddy list-certificates; then
+        warn "Caddy certificate list is unavailable. Check './deploy.sh logs caddy' for ACME details."
+    fi
 }
 
 cmd_pull() {
@@ -339,9 +280,6 @@ cmd_up() {
     echo ""
     echo -e "${BOLD}━━━  Starting services  ━━━${NC}"
     ensure_persistent_mounts
-    if [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]; then
-        ensure_nginx_certs
-    fi
     $COMPOSE up -d --remove-orphans \
         --scale server="$SERVER_REPLICAS" \
         --scale reporting="$REPORTING_REPLICAS" \
@@ -349,9 +287,9 @@ cmd_up() {
         --scale app="$APP_REPLICAS" \
         --scale partner="$PARTNER_REPLICAS"
     if [[ "$ENV_PROFILE" == "local" ]]; then
-        $COMPOSE up -d --force-recreate nginx
+        $COMPOSE up -d --force-recreate "$PROXY_SERVICE"
     fi
-    reload_nginx
+    reload_proxy
     echo ""
     ok "Containers started:"
     $COMPOSE ps
@@ -450,10 +388,17 @@ print_server_health_response() {
     done
 }
 
-reload_nginx() {
-    if $COMPOSE ps -q nginx 2>/dev/null | grep -q .; then
+reload_proxy() {
+    if ! $COMPOSE ps -q "$PROXY_SERVICE" 2>/dev/null | grep -q .; then
+        return
+    fi
+
+    if [[ "$PROXY_STACK" == "nginx" ]]; then
         log "Reloading nginx ..."
-        $COMPOSE exec -T nginx nginx -s reload >/dev/null 2>&1 || warn "nginx reload failed; container restart may still pick up config."
+        $COMPOSE exec -T "$PROXY_SERVICE" nginx -s reload >/dev/null 2>&1 || warn "nginx reload failed; container restart may still pick up config."
+    else
+        log "Reloading Caddy ..."
+        $COMPOSE exec -T "$PROXY_SERVICE" caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 || warn "Caddy reload failed; container restart may still pick up config."
     fi
 }
 
@@ -506,7 +451,7 @@ container_name() {
     docker inspect "$1" --format '{{.Name}}' | sed 's#^/##'
 }
 
-probe_container_from_nginx() {
+probe_container_from_proxy() {
     local cid="$1"
     local port="$2"
     local path="$3"
@@ -514,7 +459,7 @@ probe_container_from_nginx() {
     ip="$(container_ip "$cid")"
     [[ -n "$ip" ]] || return 1
 
-    $COMPOSE exec -T nginx wget -q -O /dev/null --timeout=5 "http://${ip}:${port}${path}" >/dev/null 2>&1
+    $COMPOSE exec -T "$PROXY_SERVICE" wget -q -O /dev/null --timeout=5 "http://${ip}:${port}${path}" >/dev/null 2>&1
 }
 
 wait_for_new_service_containers() {
@@ -544,7 +489,7 @@ wait_for_new_service_containers() {
             container_image_id="$(docker inspect "$cid" --format '{{.Image}}')"
             running="$(docker inspect "$cid" --format '{{.State.Running}}')"
             if [[ "$container_image_id" == "$new_image_id" && "$running" == "true" ]]; then
-                if probe_container_from_nginx "$cid" "$port" "$path"; then
+                if probe_container_from_proxy "$cid" "$port" "$path"; then
                     healthy=$(( healthy + 1 ))
                 fi
             fi
@@ -583,9 +528,9 @@ wait_for_new_app_containers() {
 #
 # Flow:
 #   1. Pull new images while live containers keep serving traffic.
-#   2. Scale app services up behind nginx using the newly pulled images.
-#   3. Validate the new-image containers directly through the nginx network.
-#   4. Validate the public nginx/SSL routes.
+#   2. Scale app services up behind the selected proxy using the newly pulled images.
+#   3. Validate the new-image containers directly through the proxy network.
+#   4. Validate the public proxy/SSL routes.
 #   5. Remove containers still running old image IDs.
 #   6. Settle services back to their configured replica counts.
 # ---------------------------------------------------------------------------
@@ -610,7 +555,7 @@ cmd_safe_deploy() {
     admin_deploy_replicas="$(deploy_replicas_for admin)"
     app_deploy_replicas="$(deploy_replicas_for app)"
     partner_deploy_replicas="$(deploy_replicas_for partner)"
-    log "Starting extra app replicas behind nginx"
+    log "Starting extra app replicas behind $PROXY_SERVICE"
     $COMPOSE up -d --remove-orphans kafka
     $COMPOSE up -d --no-recreate --remove-orphans \
         --scale server="$server_deploy_replicas" \
@@ -618,8 +563,8 @@ cmd_safe_deploy() {
         --scale admin="$admin_deploy_replicas" \
         --scale app="$app_deploy_replicas" \
         --scale partner="$partner_deploy_replicas" \
-        server reporting admin app partner nginx
-    reload_nginx
+        server reporting admin app partner "$PROXY_SERVICE"
+    reload_proxy
 
     wait_for_new_app_containers
     cmd_health
@@ -629,7 +574,7 @@ cmd_safe_deploy() {
     local service
     for service in server reporting admin app partner; do
         remove_outdated_service_containers "$service" "$(app_image_for "$service")" "$(replicas_for "$service")"
-        reload_nginx
+        reload_proxy
         wait_for_new_service_containers "$service" "$(app_image_for "$service")" "$(replicas_for "$service")"
     done
     $COMPOSE up -d --no-recreate --remove-orphans \
@@ -638,8 +583,8 @@ cmd_safe_deploy() {
         --scale admin="$ADMIN_REPLICAS" \
         --scale app="$APP_REPLICAS" \
         --scale partner="$PARTNER_REPLICAS" \
-        nginx
-    reload_nginx
+        "$PROXY_SERVICE"
+    reload_proxy
     cmd_health
     run_report_seed_if_enabled
 
@@ -687,16 +632,16 @@ cmd_health() {
         local domain="${domains[$i]}"
         local path="${paths[$i]}"
         local scheme="https"
-        local port="$NGINX_HTTPS_PORT"
+        local port="$PROXY_HTTPS_PORT"
         local url
         if [[ "$svc" == "minio" ]]; then
-            url="http://localhost:${MINIO_PORT:-9000}${path}"
+            url="http://${LOCAL_HEALTH_HOST}:${MINIO_PORT:-9000}${path}"
         elif [[ "$svc" == "signoz" && "$ENV_PROFILE" == "local" ]]; then
-            url="http://localhost:${SIGNOZ_HTTP_PORT:-8080}${path}"
+            url="http://${LOCAL_HEALTH_HOST}:${SIGNOZ_HTTP_PORT:-8080}${path}"
         elif [[ "$svc" == "otel-collector" && "$ENV_PROFILE" == "local" ]]; then
-            url="http://localhost:${OTEL_COLLECTOR_HEALTH_PORT:-13133}${path}"
+            url="http://${LOCAL_HEALTH_HOST}:${OTEL_COLLECTOR_HEALTH_PORT:-13133}${path}"
         elif [[ "$svc" == "portainer" && "$ENV_PROFILE" == "local" ]]; then
-            url="https://localhost:${PORTAINER_HTTPS_PORT:-9443}${path}"
+            url="https://${LOCAL_HEALTH_HOST}:${PORTAINER_HTTPS_PORT:-9443}${path}"
         elif [[ "$ENV_PROFILE" == "local" ]]; then
             scheme="http"
             case "$svc" in
@@ -706,7 +651,7 @@ cmd_health() {
                 app)       port="$APP_PORT" ;;
                 partner)   port="$PARTNER_PORT" ;;
             esac
-            url="${scheme}://localhost:${port}${path}"
+            url="${scheme}://${LOCAL_HEALTH_HOST}:${port}${path}"
         else
             url="${scheme}://${domain}:${port}${path}"
         fi
@@ -718,8 +663,8 @@ cmd_health() {
         local target_message="$url"
         local successful_url="$url"
         if [[ "$svc" == "portainer" && "$ENV_PROFILE" == "local" ]]; then
-            check_url="https://localhost:${PORTAINER_HTTPS_PORT:-9443}${path}"
-            fallback_url="http://localhost:${PORTAINER_HTTP_PORT:-8000}${path}"
+            check_url="https://${LOCAL_HEALTH_HOST}:${PORTAINER_HTTPS_PORT:-9443}${path}"
+            fallback_url="http://${LOCAL_HEALTH_HOST}:${PORTAINER_HTTP_PORT:-8000}${path}"
             target_message="$check_url (then $fallback_url)"
         fi
 
@@ -813,9 +758,6 @@ cmd_restart() {
 # Force-recreate one or all services without pulling new images
 cmd_recreate() {
     local svcs=("$@")
-    if [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]; then
-        ensure_nginx_certs
-    fi
     if [[ "${#svcs[@]}" -gt 0 ]]; then
         log "Force-recreating service(s): ${svcs[*]} ..."
     else
@@ -833,9 +775,6 @@ cmd_recreate() {
 # Pull latest image(s) then force-recreate — scoped to one or all services
 cmd_refresh() {
     local svcs=("$@")
-    if [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]; then
-        ensure_nginx_certs
-    fi
     if [[ "${#svcs[@]}" -gt 0 ]]; then
         log "Refreshing service(s): ${svcs[*]} ..."
         $COMPOSE pull "${svcs[@]}"

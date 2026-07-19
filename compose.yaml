@@ -1,6 +1,6 @@
 # HomSwag — Docker/Podman Compose
 # HomSwag images are pulled from IMAGE_REGISTRY — no local build required
-# Public traffic is served by nginx on ${NGINX_HTTP_PORT:-80}/${NGINX_HTTPS_PORT:-443}
+# Public traffic is served by the selected proxy, Caddy by default.
 
 x-service-logging: &homswag_service_logging
   logging:
@@ -129,8 +129,8 @@ services:
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     environment:
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-production}
-      OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_APP: ${OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_APP:-https://alpha.homswag.com}
-      OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_ADMIN: ${OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_ADMIN:-https://admin.alpha.homswag.com}
+      OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_APP: ${OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_APP:-https://homswag.com}
+      OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_ADMIN: ${OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_ADMIN:-https://admin.homswag.com}
       OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_PARTNER: ${OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_PARTNER:-https://partner.homswag.com}
     volumes:
       - ./otel-collector/config.yaml:/etc/otelcol-contrib/config.yaml:ro
@@ -227,17 +227,19 @@ services:
     networks:
       - homswag-net
 
-  nginx:
+  caddy:
     <<: *homswag_service_logging
-    image: ${NGINX_IMAGE:-docker.io/nginx:1.27-alpine}
-    container_name: ${NGINX_CONTAINER_NAME:-homswag-nginx}
+    image: ${CADDY_IMAGE:-docker.io/caddy:2.8-alpine}
+    container_name: ${CADDY_CONTAINER_NAME:-homswag-caddy}
+    profiles:
+      - caddy
     restart: unless-stopped
     ports:
-      - "${NGINX_HTTP_PORT:-80}:80"
-      - "${NGINX_HTTPS_PORT:-443}:443"
+      - "${CADDY_HTTP_PORT:-80}:80"
+      - "${CADDY_HTTPS_PORT:-443}:443"
     environment:
-      APP_DOMAIN: ${APP_DOMAIN:-alpha.homswag.com}
-      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.alpha.homswag.com}
+      APP_DOMAIN: ${APP_DOMAIN:-homswag.com}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.homswag.com}
       API_DOMAIN: ${API_DOMAIN:-api.alpha.homswag.com}
       REPORTING_DOMAIN: ${REPORTING_DOMAIN:-reporting.alpha.homswag.com}
       PARTNER_DOMAIN: ${PARTNER_DOMAIN:-partner.homswag.com}
@@ -245,11 +247,9 @@ services:
       PORTAINER_DOMAIN: ${PORTAINER_DOMAIN:-ports.homswag.com}
       MONITOR_DOMAIN: ${MONITOR_DOMAIN:-monitor.homswag.com}
     volumes:
-      - ${NGINX_TEMPLATES_PATH:-./nginx/templates}:/etc/nginx/templates:ro
-      - ./nginx/docker-entrypoint.d/05-remove-default-conf.sh:/docker-entrypoint.d/05-remove-default-conf.sh:ro
-      - ${NGINX_CERTS_PATH:-./nginx/certs}:/etc/nginx/certs:ro
-      - ./nginx/certbot:/var/www/certbot:ro
-      - nginx-cache:/var/cache/nginx
+      - ${CADDY_CONFIG_PATH:-./caddy/Caddyfile}:/etc/caddy/Caddyfile:ro
+      - ${CADDY_DATA_SOURCE:-caddy_data}:/data
+      - ${CADDY_CONFIG_SOURCE:-caddy_config}:/config
     depends_on:
       server:
         condition: service_started
@@ -264,23 +264,13 @@ services:
     networks:
       - homswag-net
 
-  certbot:
-    <<: *homswag_service_logging
-    image: ${CERTBOT_IMAGE:-docker.io/certbot/certbot:latest}
-    profiles:
-      - certbot
-    volumes:
-      - ./nginx/certbot:/var/www/certbot
-      - ./nginx/letsencrypt:/etc/letsencrypt
-    networks:
-      - homswag-net
-
 # ────────────────────────────────────────────────────────────────
 # Named volumes (survive container restarts / rebuilds)
 # ────────────────────────────────────────────────────────────────
 volumes:
   kafka-data:
-  nginx-cache:
+  caddy_data:
+  caddy_config:
   reporting-temp:
   portainer_data:
   signoz_data:

@@ -148,7 +148,11 @@ services:
     ports:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3002}:3000"
 
-  nginx:
-    ports: !override []
+  caddy:
+    ports: !override
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${CADDY_HTTP_PORT:-8088}:80"
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${CADDY_HTTPS_PORT:-8443}:443"
     volumes:
-      - ${NGINX_CACHE_SOURCE:-./volume-data/nginx-cache}:/var/cache/nginx
+      - ${CADDY_CONFIG_PATH:-./caddy/Caddyfile}:/etc/caddy/Caddyfile:ro
+      - ${CADDY_DATA_SOURCE:-./volume-data/caddy-data}:/data
+      - ${CADDY_CONFIG_SOURCE:-./volume-data/caddy-config}:/config

@@ -1,0 +1,218 @@
+(common_proxy_headers) {
+	header_up X-Real-IP {remote_host}
+}
+
+(otel_cors_headers) {
+	header Access-Control-Allow-Origin "{http.request.header.Origin}"
+	header Access-Control-Allow-Methods "POST, OPTIONS"
+	header Access-Control-Allow-Headers "content-type,traceparent,tracestate,baggage"
+	header Access-Control-Max-Age "86400"
+	header Vary "Origin"
+}
+
+(otel_cors_response_headers) {
+	header_down -Access-Control-Allow-Origin
+	header_down -Access-Control-Allow-Methods
+	header_down -Access-Control-Allow-Headers
+	header_down -Access-Control-Max-Age
+	header_down Access-Control-Allow-Origin "{http.request.header.Origin}"
+	header_down Vary "Origin"
+}
+
+{$API_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 50MB
+	}
+
+	@otelTracesPreflight {
+		path /otel/v1/traces
+		method OPTIONS
+		header_regexp Origin ^https://([A-Za-z0-9-]+\.)*homswag\.com$
+	}
+	handle @otelTracesPreflight {
+		import otel_cors_headers
+		respond "" 204
+	}
+
+	@otelTracesOptions {
+		path /otel/v1/traces
+		method OPTIONS
+	}
+	handle @otelTracesOptions {
+		header Access-Control-Allow-Methods "POST, OPTIONS"
+		header Access-Control-Allow-Headers "content-type,traceparent,tracestate,baggage"
+		header Access-Control-Max-Age "86400"
+		header Vary "Origin"
+		respond "" 204
+	}
+
+	handle /otel/v1/traces {
+		uri strip_prefix /otel
+		reverse_proxy otel-collector:4318 {
+			import common_proxy_headers
+			import otel_cors_response_headers
+		}
+	}
+
+	handle /otel/* {
+		respond "" 404
+	}
+
+	reverse_proxy server:3000 {
+		import common_proxy_headers
+	}
+}
+
+{$MONITOR_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 20MB
+	}
+
+	@otelPreflight {
+		method OPTIONS
+		header_regexp Origin ^https://([A-Za-z0-9-]+\.)*homswag\.com$
+	}
+	handle @otelPreflight {
+		import otel_cors_headers
+		respond "" 204
+	}
+
+	@otelOptions {
+		method OPTIONS
+	}
+	handle @otelOptions {
+		header Access-Control-Allow-Methods "POST, OPTIONS"
+		header Access-Control-Allow-Headers "content-type,traceparent,tracestate,baggage"
+		header Access-Control-Max-Age "86400"
+		header Vary "Origin"
+		respond "" 204
+	}
+
+	reverse_proxy otel-collector:4318 {
+		import common_proxy_headers
+		import otel_cors_response_headers
+	}
+}
+
+{$REPORTING_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 50MB
+	}
+
+	reverse_proxy reporting:3000 {
+		import common_proxy_headers
+	}
+}
+
+{$PARTNER_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 50MB
+	}
+
+	handle /socket.io/* {
+		reverse_proxy server:3000 {
+			header_up Host {$API_DOMAIN}
+			import common_proxy_headers
+		}
+	}
+
+	handle /bff/field/* {
+		reverse_proxy server:3000 {
+			header_up Host {$API_DOMAIN}
+			header_up X-Client-Type field
+			import common_proxy_headers
+		}
+	}
+
+	redir /bff/field /bff/field/ 308
+
+	handle /api/* {
+		uri strip_prefix /api
+		rewrite * /bff/field{uri}
+		reverse_proxy server:3000 {
+			header_up Host {$API_DOMAIN}
+			header_up X-Client-Type field
+			import common_proxy_headers
+		}
+	}
+
+	redir /api /api/ 308
+
+	reverse_proxy partner:80 {
+		import common_proxy_headers
+	}
+}
+
+{$SIGNOZ_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 50MB
+	}
+
+	reverse_proxy signoz:8080 {
+		import common_proxy_headers
+	}
+}
+
+{$PORTAINER_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 50MB
+	}
+
+	reverse_proxy https://portainer:9443 {
+		import common_proxy_headers
+		transport http {
+			tls_insecure_skip_verify
+		}
+	}
+}
+
+{$ADMIN_DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy admin:80 {
+		import common_proxy_headers
+	}
+}
+
+{$APP_DOMAIN} {
+	encode zstd gzip
+	request_body {
+		max_size 50MB
+	}
+
+	handle /socket.io/* {
+		reverse_proxy server:3000 {
+			header_up Host {$API_DOMAIN}
+			import common_proxy_headers
+		}
+	}
+
+	handle /api/homepage {
+		reverse_proxy app:3000 {
+			header_up X-Client-Type web
+			import common_proxy_headers
+		}
+	}
+
+	handle /api/* {
+		uri strip_prefix /api
+		rewrite * /bff{uri}
+		reverse_proxy server:3000 {
+			header_up Host {$API_DOMAIN}
+			header_up X-Client-Type web
+			import common_proxy_headers
+		}
+	}
+
+	redir /api /api/ 308
+
+	reverse_proxy app:3000 {
+		import common_proxy_headers
+	}
+}

@@ -8,9 +8,9 @@ Deployment workspace for running the full HomSwag stack with Podman/Docker Compo
 - Builds images for `server`, `reporting`, `admin`, `app`, and `kafka`
 - Pulls/deploys production application images from GitHub Container Registry
 - Pushes release images to `ghcr.io/jeraldvictor` only when requested
-- Starts Kafka, nginx, and application containers in production
+- Starts Kafka, Caddy, and application containers in production
 - Uses externally managed MongoDB/DocumentDB, Valkey/Redis-protocol cache, and object storage
-- Serves public traffic through the compose-managed `nginx` container with SSL
+- Serves public traffic through the compose-managed `caddy` container with automatic HTTPS
 - Supports environment profiles (`local`, `prod`)
 - Supports deploying only selected services
 
@@ -86,8 +86,8 @@ MinIO, or Mongo Express containers.
 
 ### Current production domains
 
-- Client app: `https://alpha.homswag.com`
-- Admin: `https://admin.alpha.homswag.com`
+- Client app: `https://homswag.com`
+- Admin: `https://admin.homswag.com`
 - API: `https://api.alpha.homswag.com`
 - Reporting: `https://reporting.alpha.homswag.com`
 - Partner app: `https://partner.homswag.com`
@@ -95,42 +95,41 @@ MinIO, or Mongo Express containers.
 - Portainer UI: `https://ports.homswag.com`
 - Public OTLP HTTP collector: `https://monitor.homswag.com`
 
-### Nginx TLS routing
+### Caddy TLS routing
 
-- Reverse proxy template: `nginx/templates/homswag.conf.template`
-- Public ports are served by the `nginx` service on `80` and `443`
-- Certificates are mounted from `NGINX_CERTS_PATH` (default: `./nginx/certs`)
-- Expected cert files:
-  - `nginx/certs/alpha.homswag.com/fullchain.pem`
-  - `nginx/certs/alpha.homswag.com/privkey.pem`
-  - `nginx/certs/admin.alpha.homswag.com/fullchain.pem`
-  - `nginx/certs/admin.alpha.homswag.com/privkey.pem`
-  - `nginx/certs/api.alpha.homswag.com/fullchain.pem`
-  - `nginx/certs/api.alpha.homswag.com/privkey.pem`
-  - `nginx/certs/reporting.alpha.homswag.com/fullchain.pem`
-  - `nginx/certs/reporting.alpha.homswag.com/privkey.pem`
-  - `nginx/certs/partner.homswag.com/fullchain.pem`
-  - `nginx/certs/partner.homswag.com/privkey.pem`
-  - `nginx/certs/signoz.homswag.com/fullchain.pem`
-  - `nginx/certs/signoz.homswag.com/privkey.pem`
-  - `nginx/certs/ports.homswag.com/fullchain.pem`
-  - `nginx/certs/ports.homswag.com/privkey.pem`
-  - `nginx/certs/monitor.homswag.com/fullchain.pem`
-  - `nginx/certs/monitor.homswag.com/privkey.pem`
+- Reverse proxy config: `caddy/Caddyfile`
+- Public ports are served by the `caddy` service on `80` and `443`
+- Certificates are obtained and renewed automatically by Caddy
+- Certificate/account state is stored in the `caddy_data` and `caddy_config`
+  volumes, or the paths set with `CADDY_DATA_SOURCE` and `CADDY_CONFIG_SOURCE`
+- `PROXY_STACK=caddy` is the default deploy proxy and forces HTTP to HTTPS
+  through Caddy's automatic HTTPS redirects.
 
-If a cert is missing, `deploy.sh` creates a temporary 7-day self-signed cert so
-nginx can start. To issue trusted Let's Encrypt certificates, make sure DNS for
-all production domains points to the deployment host and port `80` is reachable, then
-run:
+For trusted public certificates, make sure DNS for all production domains points
+to the deployment host and ports `80` and `443` are reachable, then run:
 
 ```bash
-./deploy.sh --env prod recreate nginx
+./deploy.sh --env prod recreate caddy
 ./deploy.sh --env prod certs
 ```
 
-The command uses the nginx HTTP-01 challenge path, installs the issued
-certificates into `NGINX_CERTS_PATH`, verifies they are not self-signed, and
-reloads nginx.
+The `certs` command starts/reloads Caddy and prints Caddy's certificate status.
+ACME issuance and renewal happen inside Caddy.
+
+### nginx fallback
+
+The previous nginx proxy can be started as a rollback path with the overlay
+`compose.nginx.yaml`:
+
+```bash
+PROXY_STACK=nginx ./deploy.sh --env prod up
+PROXY_STACK=nginx ./deploy.sh --env prod health
+```
+
+nginx fallback expects certificate files under `NGINX_CERTS_PATH`
+(`./nginx/certs` by default). Caddy remains the recommended production proxy;
+use nginx only as a temporary rollback lever if Caddy has to be removed from
+traffic.
 
 ---
 
@@ -203,7 +202,7 @@ http://localhost:9101                  # MinIO console
 ```
 
 Local container data is bind-mounted under `deploy/volume-data/` and ignored by
-git. This includes MongoDB, Redis, MinIO, Kafka, nginx cache, server uploads,
+git. This includes MongoDB, Redis, MinIO, Kafka, Caddy state, server uploads,
 and server logs. `./deploy.sh --env local down` keeps that data; remove
 `deploy/volume-data/` only when you want a fully clean local state.
 
@@ -240,7 +239,7 @@ Local safety rules:
   image names.
 - Local deploys skip registry pulls by default through `PULL_IMAGES=false`.
 - `./build-images.sh --env local --push` is intentionally blocked.
-- Local nginx is internal-only and does not publish HTTP or HTTPS ports.
+- Local Caddy is internal-only and does not publish HTTP or HTTPS ports.
 
 #### Production build and deploy
 
@@ -274,8 +273,10 @@ Useful production operations:
 ./deploy.sh --env prod pull            # pull registry images only
 ./deploy.sh --env prod status          # show running containers
 ./deploy.sh --env prod logs server     # follow server logs
-./deploy.sh --env prod restart nginx   # restart nginx
-./deploy.sh --env prod certs           # issue/renew Let's Encrypt certs
+./deploy.sh --env prod restart caddy   # restart Caddy
+./deploy.sh --env prod certs           # show Caddy-managed certificate status
+PROXY_STACK=nginx ./deploy.sh --env prod up      # rollback to nginx proxy
+PROXY_STACK=nginx ./deploy.sh --env prod health  # validate nginx fallback
 ```
 
 Run commands inside production containers:
@@ -359,7 +360,7 @@ Production access:
 
 Production SigNoz and Portainer direct host port defaults bind to `127.0.0.1`.
 Keep those defaults unless you intentionally need raw host-port access; public
-access should go through nginx and the TLS domains above.
+access should go through Caddy and the TLS domains above.
 
 Production SigNoz and Portainer state should be host-mounted under `/app/data`
 on the VPS:
@@ -422,7 +423,7 @@ Use the first-run wizard to create your Portainer admin user on first startup.
       consumer code sends Kafka spans. A healthy Kafka container by itself will
       not populate that page.
     - Docker stdout/stderr logs show as container service names like `/deploy-server-1`,
-      `/deploy-admin-1`, `/deploy-app-1`, `/homswag-local-nginx`.
+      `/deploy-admin-1`, `/deploy-app-1`, `/homswag-local-caddy`.
     - Server logs intentionally appear in both places: clean app logs under `api-server`
       and raw container stdout under `/deploy-server-1`.
   - Full feature checklist (click and validate):
@@ -585,7 +586,7 @@ will ignore them when determining which services to act on.
 ```
 
 Production deploy is graceful: it pulls images, scales app services up behind
-nginx, verifies the new-image containers directly from the nginx network,
+Caddy, verifies the new-image containers directly from the Caddy network,
 verifies the public SSL routes, removes old-image containers one service at a
 time, and settles back to the configured replica counts.
 
@@ -603,7 +604,7 @@ least double the normal replica count so it can prove the replacement set is
 healthy before removing the old containers.
 
 Local deploy uses `compose.local.yaml` with `.env.local`, which starts MongoDB,
-Redis, MinIO, Kafka, nginx, and the app services together. Browser-facing local
+Redis, MinIO, Kafka, Caddy, and the app services together. Browser-facing local
 traffic uses direct localhost ports only; service-to-service calls inside Docker
 still use compose service names such as `server` and `reporting`.
 
@@ -616,7 +617,7 @@ http://localhost:3003/health           # reporting service
 http://localhost:9101                  # MinIO console
 ```
 
-Local nginx is kept internal to the compose stack and does not publish HTTPS
+Local Caddy is kept internal to the compose stack and does not publish HTTPS
 ports. Image pulls and image pruning are skipped by default for local deploys;
 build local frontend images first when changing `admin`, `app`, or `partner`.
 

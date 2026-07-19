@@ -1,0 +1,56 @@
+# HomSwag — nginx fallback proxy overlay
+# Use with: PROXY_STACK=nginx ./deploy.sh --env prod ...
+
+services:
+  caddy:
+    profiles:
+      - caddy-disabled
+    ports: !override []
+
+  nginx:
+    image: ${NGINX_IMAGE:-docker.io/nginx:1.27-alpine}
+    container_name: ${NGINX_CONTAINER_NAME:-homswag-nginx}
+    profiles:
+      - nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_HTTP_PORT:-80}:80"
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:-homswag.com}
+      ADMIN_DOMAIN: ${ADMIN_DOMAIN:-admin.homswag.com}
+      API_DOMAIN: ${API_DOMAIN:-api.alpha.homswag.com}
+      REPORTING_DOMAIN: ${REPORTING_DOMAIN:-reporting.alpha.homswag.com}
+      PARTNER_DOMAIN: ${PARTNER_DOMAIN:-partner.homswag.com}
+      SIGNOZ_DOMAIN: ${SIGNOZ_DOMAIN:-signoz.homswag.com}
+      PORTAINER_DOMAIN: ${PORTAINER_DOMAIN:-ports.homswag.com}
+      MONITOR_DOMAIN: ${MONITOR_DOMAIN:-monitor.homswag.com}
+    volumes:
+      - ${NGINX_TEMPLATES_PATH:-./nginx/templates}:/etc/nginx/templates:ro
+      - ./nginx/docker-entrypoint.d/05-remove-default-conf.sh:/docker-entrypoint.d/05-remove-default-conf.sh:ro
+      - ${NGINX_CERTS_PATH:-./nginx/certs}:/etc/nginx/certs:ro
+      - ./nginx/certbot:/var/www/certbot:ro
+      - nginx-cache:/var/cache/nginx
+    depends_on:
+      server:
+        condition: service_started
+      reporting:
+        condition: service_started
+      admin:
+        condition: service_started
+      partner:
+        condition: service_started
+      app:
+        condition: service_started
+    networks:
+      - homswag-net
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: ${DOCKER_LOG_FLUENTD_ADDRESS:-127.0.0.1:24224}
+        fluentd-async: "true"
+        fluentd-sub-second-precision: "true"
+        tag: ${DOCKER_LOG_TAG:-homswag}
+
+volumes:
+  nginx-cache:
