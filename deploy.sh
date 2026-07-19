@@ -626,9 +626,9 @@ cmd_health() {
     local all_ok=true
 
     # Parallel arrays — avoids associative arrays (bash 3.2 on macOS)
-    local svcs=("server" "reporting" "admin" "app" "apex-app" "partner" "signoz" "portainer" "otel-collector")
-    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$APEX_APP_DOMAIN" "$PARTNER_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN")
-    local paths=("/health" "/health" "/health" "/" "/" "/health" "/" "/" "/v1/traces")
+    local svcs=("server" "reporting" "admin" "app" "apex-app" "app-otel" "partner" "signoz" "portainer" "otel-collector")
+    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$APEX_APP_DOMAIN" "$APP_DOMAIN" "$PARTNER_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN")
+    local paths=("/health" "/health" "/health" "/" "/" "/otel/v1/traces" "/health" "/" "/" "/v1/traces")
 
     local i
     for i in "${!svcs[@]}"; do
@@ -687,7 +687,7 @@ cmd_health() {
                 fi
             elif [[ "$svc" == "minio" || "$ENV_PROFILE" == "local" ]]; then
                 http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$url" || echo "000")
-            elif [[ "$svc" == "otel-collector" ]]; then
+            elif [[ "$svc" == "otel-collector" || "$svc" == "app-otel" ]]; then
                 http_code=$(curl -k -s -o "$tmp_body" -w "%{http_code}" --max-time 5 --resolve "${domain}:${port}:127.0.0.1" -H "Content-Type: application/json" --data '{}' "$url" || echo "000")
             else
                 http_code=$(curl -k -s -o "$tmp_body" -w "%{http_code}" --max-time 5 --resolve "${domain}:${port}:127.0.0.1" "$url" || echo "000")
