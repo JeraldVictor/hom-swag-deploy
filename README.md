@@ -86,8 +86,8 @@ MinIO, or Mongo Express containers.
 
 ### Current production domains
 
-- Client app: `https://homswag.com`
-- Client app canonical redirect: `https://www.homswag.com` -> `https://homswag.com`
+- Client app: `https://www.homswag.com`
+- Client app canonical redirect: `https://homswag.com` -> `https://www.homswag.com`
 - Admin: `https://admin.homswag.com`
 - API: `https://api.alpha.homswag.com`
 - Reporting: `https://reporting.alpha.homswag.com`
@@ -105,8 +105,8 @@ MinIO, or Mongo Express containers.
   volumes, or the paths set with `CADDY_DATA_SOURCE` and `CADDY_CONFIG_SOURCE`
 - `PROXY_STACK=caddy` is the default deploy proxy and forces HTTP to HTTPS
   through Caddy's automatic HTTPS redirects.
-- `WWW_APP_DOMAIN` is served only as a permanent redirect to `APP_DOMAIN`; by
-  default, `www.homswag.com` redirects to `homswag.com`.
+- `APEX_APP_DOMAIN` is served only as a permanent redirect to `APP_DOMAIN`; by
+  default, `homswag.com` redirects to `www.homswag.com`.
 
 For trusted public certificates, make sure DNS for all production domains points
 to the deployment host and ports `80` and `443` are reachable, then run:

@@ -187,8 +187,9 @@ LOCAL_HEALTH_HOST="${HOST_BIND_ADDRESS:-127.0.0.1}"
 if [[ "$LOCAL_HEALTH_HOST" == "0.0.0.0" ]]; then
     LOCAL_HEALTH_HOST="127.0.0.1"
 fi
-APP_DOMAIN="${APP_DOMAIN:-homswag.com}"
-WWW_APP_DOMAIN="${WWW_APP_DOMAIN:-www.homswag.com}"
+APP_DOMAIN="${APP_DOMAIN:-www.homswag.com}"
+APEX_APP_DOMAIN="${APEX_APP_DOMAIN:-homswag.com}"
+WWW_APP_DOMAIN="${WWW_APP_DOMAIN:-$APP_DOMAIN}"
 ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.homswag.com}"
 API_DOMAIN="${API_DOMAIN:-api.alpha.homswag.com}"
 REPORTING_DOMAIN="${REPORTING_DOMAIN:-reporting.alpha.homswag.com}"
@@ -309,7 +310,7 @@ cmd_up() {
         echo -e "  ${BOLD}Reporting${NC}-> https://${REPORTING_DOMAIN}"
         echo -e "  ${BOLD}Admin${NC}    -> https://${ADMIN_DOMAIN}"
         echo -e "  ${BOLD}App${NC}      -> https://${APP_DOMAIN}"
-        echo -e "  ${BOLD}WWW App${NC}  -> https://${WWW_APP_DOMAIN} -> https://${APP_DOMAIN}"
+        echo -e "  ${BOLD}Apex App${NC} -> https://${APEX_APP_DOMAIN} -> https://${APP_DOMAIN}"
         echo -e "  ${BOLD}Partner${NC}  -> https://${PARTNER_DOMAIN}"
         echo -e "  ${BOLD}SigNoz${NC}   -> https://${SIGNOZ_DOMAIN}"
         echo -e "  ${BOLD}Portainer${NC}-> https://${PORTAINER_DOMAIN}"
@@ -625,8 +626,8 @@ cmd_health() {
     local all_ok=true
 
     # Parallel arrays — avoids associative arrays (bash 3.2 on macOS)
-    local svcs=("server" "reporting" "admin" "app" "www-app" "partner" "signoz" "portainer" "otel-collector")
-    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$WWW_APP_DOMAIN" "$PARTNER_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN")
+    local svcs=("server" "reporting" "admin" "app" "apex-app" "partner" "signoz" "portainer" "otel-collector")
+    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$APEX_APP_DOMAIN" "$PARTNER_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN")
     local paths=("/health" "/health" "/health" "/" "/" "/health" "/" "/" "/v1/traces")
 
     local i

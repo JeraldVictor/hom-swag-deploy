@@ -180,7 +180,7 @@
 	}
 }
 
-{$WWW_APP_DOMAIN} {
+{$APEX_APP_DOMAIN} {
 	redir https://{$APP_DOMAIN}{uri} 308
 }
 
