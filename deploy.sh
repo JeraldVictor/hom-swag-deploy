@@ -254,9 +254,10 @@ cmd_certs() {
     log "Caddy obtains and renews public TLS certificates automatically when DNS points at this host and ports 80/443 are reachable."
     $COMPOSE up -d "$PROXY_SERVICE"
     reload_proxy
-    if ! $COMPOSE exec -T "$PROXY_SERVICE" caddy list-certificates; then
-        warn "Caddy certificate list is unavailable. Check './deploy.sh logs caddy' for ACME details."
-    fi
+    $COMPOSE exec -T "$PROXY_SERVICE" caddy validate --config /etc/caddy/Caddyfile >/dev/null
+    ok "Caddy config is valid and loaded."
+    log "Run './deploy.sh --env ${ENV_PROFILE} health' to verify live HTTPS routes."
+    log "Run './deploy.sh --env ${ENV_PROFILE} logs caddy' to inspect ACME issuance/renewal details."
 }
 
 cmd_pull() {
