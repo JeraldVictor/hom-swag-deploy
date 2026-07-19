@@ -308,6 +308,7 @@ cmd_up() {
         echo -e "  ${BOLD}Reporting${NC}-> https://${REPORTING_DOMAIN}"
         echo -e "  ${BOLD}Admin${NC}    -> https://${ADMIN_DOMAIN}"
         echo -e "  ${BOLD}App${NC}      -> https://${APP_DOMAIN}"
+        echo -e "  ${BOLD}WWW App${NC}  -> https://${WWW_APP_DOMAIN} -> https://${APP_DOMAIN}"
         echo -e "  ${BOLD}Partner${NC}  -> https://${PARTNER_DOMAIN}"
         echo -e "  ${BOLD}SigNoz${NC}   -> https://${SIGNOZ_DOMAIN}"
         echo -e "  ${BOLD}Portainer${NC}-> https://${PORTAINER_DOMAIN}"
@@ -623,9 +624,9 @@ cmd_health() {
     local all_ok=true
 
     # Parallel arrays — avoids associative arrays (bash 3.2 on macOS)
-    local svcs=("server" "reporting" "admin" "app" "partner" "signoz" "portainer" "otel-collector")
-    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$PARTNER_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN")
-    local paths=("/health" "/health" "/health" "/" "/health" "/" "/" "/")
+    local svcs=("server" "reporting" "admin" "app" "www-app" "partner" "signoz" "portainer" "otel-collector")
+    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$WWW_APP_DOMAIN" "$PARTNER_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN")
+    local paths=("/health" "/health" "/health" "/" "/" "/health" "/" "/" "/v1/traces")
 
     local i
     for i in "${!svcs[@]}"; do
@@ -684,6 +685,8 @@ cmd_health() {
                 fi
             elif [[ "$svc" == "minio" || "$ENV_PROFILE" == "local" ]]; then
                 http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$url" || echo "000")
+            elif [[ "$svc" == "otel-collector" ]]; then
+                http_code=$(curl -k -s -o "$tmp_body" -w "%{http_code}" --max-time 5 --resolve "${domain}:${port}:127.0.0.1" -H "Content-Type: application/json" --data '{}' "$url" || echo "000")
             else
                 http_code=$(curl -k -s -o "$tmp_body" -w "%{http_code}" --max-time 5 --resolve "${domain}:${port}:127.0.0.1" "$url" || echo "000")
             fi
