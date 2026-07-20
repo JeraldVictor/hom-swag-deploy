@@ -4,12 +4,10 @@
 
 x-service-logging: &homswag_service_logging
   logging:
-    driver: fluentd
+    driver: json-file
     options:
-      fluentd-address: ${DOCKER_LOG_FLUENTD_ADDRESS:-127.0.0.1:24224}
-      fluentd-async: "true"
-      fluentd-sub-second-precision: "true"
-      tag: ${DOCKER_LOG_TAG:-homswag}
+      max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
+      max-file: ${DOCKER_LOG_MAX_FILE:-30}
 
 services:
   # ────────────────────────────────────────────────────────────────
@@ -39,8 +37,6 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
-      otel-collector:
-        condition: service_started
     networks:
       - homswag-net
 
@@ -76,6 +72,8 @@ services:
     image: ${SIGNOZ_IMAGE:-signoz/signoz-standalone:latest}
     pull_policy: ${SIGNOZ_PULL_POLICY:-always}
     container_name: ${SIGNOZ_CONTAINER_NAME:-homswag-signoz}
+    profiles:
+      - observability
     environment:
       SIGNOZ_USER_ROOT_ENABLED: ${SIGNOZ_USER_ROOT_ENABLED:-false}
       SIGNOZ_USER_ROOT_ORG_NAME: ${SIGNOZ_USER_ROOT_ORG_NAME:-default}
@@ -97,6 +95,8 @@ services:
     image: ${SIGNOZ_IMAGE:-signoz/signoz-standalone:latest}
     pull_policy: ${SIGNOZ_PULL_POLICY:-always}
     container_name: ${SIGNOZ_RETENTION_CONTAINER_NAME:-homswag-signoz-retention}
+    profiles:
+      - observability
     restart: unless-stopped
     entrypoint: ["/bin/sh", "/opt/homswag/signoz-retention.sh"]
     environment:
@@ -124,6 +124,8 @@ services:
     image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector-contrib:0.129.1}
     pull_policy: ${OTEL_COLLECTOR_PULL_POLICY:-always}
     container_name: ${OTEL_COLLECTOR_CONTAINER_NAME:-homswag-otel-collector}
+    profiles:
+      - observability
     restart: unless-stopped
     user: "0:0"
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
@@ -155,6 +157,8 @@ services:
     image: ${PORTAINER_IMAGE:-portainer/portainer-ce:2.30.1}
     pull_policy: ${PORTAINER_PULL_POLICY:-always}
     container_name: ${PORTAINER_CONTAINER_NAME:-homswag-portainer}
+    profiles:
+      - observability
     restart: unless-stopped
     # Keep default Portainer entrypoint. The CE image can be shell-less, so
     # overriding with /bin/sh causes startup errors in some versions.

@@ -134,6 +134,7 @@ case "$PROXY_STACK" in
     *) die "Invalid PROXY_STACK='$PROXY_STACK'. Use: caddy | nginx" ;;
 esac
 PROXY_SERVICE="$PROXY_STACK"
+OBSERVABILITY_STACK="${OBSERVABILITY_STACK:-false}"
 
 # ── Discover compose binary ────────────────────────────────────────────────────
 if command -v docker &>/dev/null; then
@@ -169,7 +170,11 @@ if [[ "$ENV_PROFILE" == "local" ]]; then
     COMPOSE_FILES="$COMPOSE_FILES -f compose.local.yaml"
 fi
 
-COMPOSE="$COMPOSE_BIN --profile $PROXY_STACK --env-file $ENV_FILE $COMPOSE_FILES"
+COMPOSE_PROFILES_ARGS="--profile $PROXY_STACK"
+if is_truthy "$OBSERVABILITY_STACK"; then
+    COMPOSE_PROFILES_ARGS="$COMPOSE_PROFILES_ARGS --profile observability"
+fi
+COMPOSE="$COMPOSE_BIN $COMPOSE_PROFILES_ARGS --env-file $ENV_FILE $COMPOSE_FILES"
 
 # ── Port defaults (overridden by env file if set) ──────────────────────────────
 SERVER_PORT="${SERVER_PORT:-3000}"
@@ -204,6 +209,10 @@ APP_REPLICAS="${APP_REPLICAS:-1}"
 PARTNER_REPLICAS="${PARTNER_REPLICAS:-1}"
 DEPLOY_REPLICAS="${DEPLOY_REPLICAS:-2}"
 
+observability_enabled() {
+    is_truthy "$OBSERVABILITY_STACK"
+}
+
 # =============================================================================
 # Sub-commands
 # =============================================================================
@@ -237,9 +246,11 @@ ensure_host_mount_dir() {
 ensure_persistent_mounts() {
     ensure_host_mount_dir "Caddy data" "${CADDY_DATA_SOURCE:-}"
     ensure_host_mount_dir "Caddy config" "${CADDY_CONFIG_SOURCE:-}"
-    ensure_host_mount_dir "Portainer data" "${PORTAINER_DATA_SOURCE:-}"
-    ensure_host_mount_dir "SigNoz data" "${SIGNOZ_DATA_SOURCE:-}"
-    ensure_host_mount_dir "SigNoz ClickHouse data" "${SIGNOZ_CLICKHOUSE_DATA_SOURCE:-}"
+    if observability_enabled; then
+        ensure_host_mount_dir "Portainer data" "${PORTAINER_DATA_SOURCE:-}"
+        ensure_host_mount_dir "SigNoz data" "${SIGNOZ_DATA_SOURCE:-}"
+        ensure_host_mount_dir "SigNoz ClickHouse data" "${SIGNOZ_CLICKHOUSE_DATA_SOURCE:-}"
+    fi
 }
 
 cmd_certs() {
@@ -303,8 +314,12 @@ cmd_up() {
         echo -e "  ${BOLD}Admin${NC}    -> http://localhost:${ADMIN_PORT}"
         echo -e "  ${BOLD}App${NC}      -> http://localhost:${APP_PORT}"
         echo -e "  ${BOLD}Partner${NC}  -> http://localhost:${PARTNER_PORT}"
-        echo -e "  ${BOLD}SigNoz${NC}   -> http://localhost:${SIGNOZ_HTTP_PORT:-9080}"
-        echo -e "  ${BOLD}Portainer${NC}-> https://localhost:${PORTAINER_HTTPS_PORT:-9443} (UI), http://localhost:${PORTAINER_HTTP_PORT:-8000} (agent)"
+        if observability_enabled; then
+            echo -e "  ${BOLD}SigNoz${NC}   -> http://localhost:${SIGNOZ_HTTP_PORT:-9080}"
+            echo -e "  ${BOLD}Portainer${NC}-> https://localhost:${PORTAINER_HTTPS_PORT:-9443} (UI), http://localhost:${PORTAINER_HTTP_PORT:-8000} (agent)"
+        else
+            echo -e "  ${BOLD}Observability${NC}-> disabled"
+        fi
     else
         echo -e "  ${BOLD}API${NC}      -> https://${API_DOMAIN}"
         echo -e "  ${BOLD}Reporting${NC}-> https://${REPORTING_DOMAIN}"
@@ -312,9 +327,13 @@ cmd_up() {
         echo -e "  ${BOLD}App${NC}      -> https://${APP_DOMAIN}"
         echo -e "  ${BOLD}Apex App${NC} -> https://${APEX_APP_DOMAIN} -> https://${APP_DOMAIN}"
         echo -e "  ${BOLD}Partner${NC}  -> https://${PARTNER_DOMAIN}"
-        echo -e "  ${BOLD}SigNoz${NC}   -> https://${SIGNOZ_DOMAIN}"
-        echo -e "  ${BOLD}Portainer${NC}-> https://${PORTAINER_DOMAIN}"
-        echo -e "  ${BOLD}OTEL${NC}     -> https://${MONITOR_DOMAIN}"
+        if observability_enabled; then
+            echo -e "  ${BOLD}SigNoz${NC}   -> https://${SIGNOZ_DOMAIN}"
+            echo -e "  ${BOLD}Portainer${NC}-> https://${PORTAINER_DOMAIN}"
+            echo -e "  ${BOLD}OTEL${NC}     -> https://${MONITOR_DOMAIN}"
+        else
+            echo -e "  ${BOLD}Observability${NC}-> disabled"
+        fi
     fi
     echo ""
 }
@@ -626,9 +645,14 @@ cmd_health() {
     local all_ok=true
 
     # Parallel arrays — avoids associative arrays (bash 3.2 on macOS)
-    local svcs=("server" "reporting" "admin" "app" "apex-app" "app-otel" "partner" "signoz" "portainer" "otel-collector")
-    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$APEX_APP_DOMAIN" "$APP_DOMAIN" "$PARTNER_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN")
-    local paths=("/health" "/health" "/health" "/" "/" "/otel/v1/traces" "/health" "/" "/" "/v1/traces")
+    local svcs=("server" "reporting" "admin" "app" "apex-app" "partner")
+    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$APEX_APP_DOMAIN" "$PARTNER_DOMAIN")
+    local paths=("/health" "/health" "/health" "/" "/" "/health")
+    if observability_enabled; then
+        svcs+=("app-otel" "signoz" "portainer" "otel-collector")
+        domains+=("$APP_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN")
+        paths+=("/otel/v1/traces" "/" "/" "/v1/traces")
+    fi
 
     local i
     for i in "${!svcs[@]}"; do
@@ -681,7 +705,7 @@ cmd_health() {
             if [[ "$svc" == "portainer" ]]; then
                 http_code=$(curl -k -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$check_url" || echo "000")
                 successful_url="$check_url"
-                if [[ "$http_code" != "200" && "$http_code" != "301" && "$http_code" != "302" && "$http_code" != "307" && "$http_code" != "308" ]]; then
+                if [[ "$http_code" != "200" && "$http_code" != "204" && "$http_code" != "301" && "$http_code" != "302" && "$http_code" != "307" && "$http_code" != "308" ]]; then
                     http_code=$(curl -s -o "$tmp_body" -w "%{http_code}" --max-time 3 "$fallback_url" || echo "000")
                     successful_url="$fallback_url"
                 fi
@@ -701,7 +725,7 @@ cmd_health() {
             fi
             rm -f "$tmp_body"
 
-            if [[ "$http_code" == "200" || "$http_code" == "301" || "$http_code" == "302" || "$http_code" == "307" || "$http_code" == "308" ]]; then
+            if [[ "$http_code" == "200" || "$http_code" == "204" || "$http_code" == "301" || "$http_code" == "302" || "$http_code" == "307" || "$http_code" == "308" ]]; then
                 ok "$svc is up  ($successful_url)"
                 svc_ok=true
                 break

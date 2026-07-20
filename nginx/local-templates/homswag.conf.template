@@ -35,10 +35,6 @@ upstream homswag_app {
     server app:3000;
 }
 
-upstream homswag_otel_collector {
-    server otel-collector:4318;
-}
-
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
@@ -84,19 +80,12 @@ server {
             return 204;
         }
 
-        rewrite ^/otel/(.*)$ /$1 break;
-        proxy_pass http://homswag_otel_collector;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto http;
-        proxy_hide_header Access-Control-Allow-Origin;
-        proxy_hide_header Access-Control-Allow-Methods;
-        proxy_hide_header Access-Control-Allow-Headers;
-        proxy_hide_header Access-Control-Max-Age;
         add_header Access-Control-Allow-Origin $otel_cors_origin always;
+        add_header Access-Control-Allow-Methods "POST, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "content-type,traceparent,tracestate,baggage" always;
+        add_header Access-Control-Max-Age 86400 always;
         add_header Vary Origin always;
+        return 204;
     }
 
     location /otel/ {

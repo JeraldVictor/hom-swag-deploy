@@ -48,11 +48,8 @@
 	}
 
 	handle /otel/v1/traces {
-		uri strip_prefix /otel
-		reverse_proxy otel-collector:4318 {
-			import common_proxy_headers
-			import otel_cors_response_headers
-		}
+		import otel_cors_headers
+		respond "" 204
 	}
 
 	handle /otel/* {
@@ -90,10 +87,7 @@
 		respond "" 204
 	}
 
-	reverse_proxy otel-collector:4318 {
-		import common_proxy_headers
-		import otel_cors_response_headers
-	}
+	respond "" 204
 }
 
 {$REPORTING_DOMAIN} {
@@ -153,9 +147,7 @@
 		max_size 50MB
 	}
 
-	reverse_proxy signoz:8080 {
-		import common_proxy_headers
-	}
+	respond "" 204
 }
 
 {$PORTAINER_DOMAIN} {
@@ -164,12 +156,7 @@
 		max_size 50MB
 	}
 
-	reverse_proxy https://portainer:9443 {
-		import common_proxy_headers
-		transport http {
-			tls_insecure_skip_verify
-		}
-	}
+	respond "" 204
 }
 
 {$ADMIN_DOMAIN} {
@@ -213,11 +200,8 @@
 	}
 
 	handle /otel/v1/traces {
-		uri strip_prefix /otel
-		reverse_proxy otel-collector:4318 {
-			import common_proxy_headers
-			import otel_cors_response_headers
-		}
+		import otel_cors_headers
+		respond "" 204
 	}
 
 	handle /otel/* {

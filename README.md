@@ -305,25 +305,30 @@ Production safety rules:
 
 ### Observability + Operations
 
-We run two services for logs and operations in both local and production:
+Observability and operations UIs are disabled by default to keep deployment CPU
+usage low. The main application stack uses bounded Docker `json-file` logs and
+does not require SigNoz, the OpenTelemetry collector, or Portainer to start.
+
+When explicitly enabled with `OBSERVABILITY_STACK=true`, the optional profile
+can run:
 
 - **SigNoz** (`signoz`): OTEL backend for logs/traces/metrics query and retention.
 - **SigNoz retention worker** (`signoz-retention`): enforces the local/prod
   telemetry retention policy against SigNoz ClickHouse.
-- **OpenTelemetry Collector** (`otel-collector`): receives Docker stdout/stderr
-  via Docker's Fluentd logging driver, receives OTLP, collects Docker metrics,
-  and exports everything to SigNoz.
+- **OpenTelemetry Collector** (`otel-collector`): receives OTLP, collects Docker
+  metrics, and exports observability signals to SigNoz.
 - **Portainer** (`portainer`): Docker stack/container management and quick operational control.
 
 Configured defaults:
 
 ```bash
 # .env.local
-ENABLE_OTEL=true
+OBSERVABILITY_STACK=false
+ENABLE_OTEL=false
 OTEL_ENDPOINT=http://otel-collector:4318
 OTEL_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
 OTEL_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
-DOCKER_LOG_FLUENTD_ADDRESS=127.0.0.1:24224
+VITE_ENABLE_RUM=false
 OTEL_COLLECTOR_FORWARD_PORT=24224
 SIGNOZ_HTTP_PORT=9080
 PORTAINER_HTTPS_PORT=9443
@@ -331,11 +336,12 @@ SIGNOZ_RETENTION_DAYS=7
 SIGNOZ_MAX_BYTES=5368709120
 
 # .env.prod
-ENABLE_OTEL=true
+OBSERVABILITY_STACK=false
+ENABLE_OTEL=false
 OTEL_ENDPOINT=http://otel-collector:4318
 OTEL_LOGS_ENDPOINT=http://otel-collector:4318/v1/logs
 OTEL_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces
-DOCKER_LOG_FLUENTD_ADDRESS=127.0.0.1:24224
+VITE_ENABLE_RUM=false
 OTEL_COLLECTOR_FORWARD_PORT=24224
 SIGNOZ_HTTP_PORT=8080
 SIGNOZ_HTTP_BIND=127.0.0.1
@@ -390,12 +396,13 @@ https://monitor.homswag.com/v1/traces
 ```
 
 Server and reporting telemetry continue to use the internal Docker network
-endpoint `http://otel-collector:4318`.
+endpoint `http://otel-collector:4318` only when `ENABLE_OTEL=true` and
+`OBSERVABILITY_STACK=true`.
 
 ### Full UI + Login for SigNoz & Portainer
 
-For an immediate full UI experience with authentication, set these values before
-first boot:
+For an immediate full UI experience with authentication, set
+`OBSERVABILITY_STACK=true` and these values before first boot:
 
 ```bash
 # SigNoz
@@ -425,10 +432,6 @@ Use the first-run wizard to create your Portainer admin user on first startup.
     - Kafka Messaging Queue data appears only after instrumented producer or
       consumer code sends Kafka spans. A healthy Kafka container by itself will
       not populate that page.
-    - Docker stdout/stderr logs show as container service names like `/deploy-server-1`,
-      `/deploy-admin-1`, `/deploy-app-1`, `/homswag-local-caddy`.
-    - Server logs intentionally appear in both places: clean app logs under `api-server`
-      and raw container stdout under `/deploy-server-1`.
   - Full feature checklist (click and validate):
     - Traces → Service Map, Dependencies, Trace to Logs, Filters/Tags, and Saved Views
     - Logs → Log Explorer, Advanced Query, Saved Views, Saved Search, and Alerts
@@ -461,23 +464,18 @@ curl -s http://localhost:13133
 
 ### Log cleanup / retention
 
-There are two types of logs in this stack:
-
-- **SigNoz logs:** app OTEL logs plus Docker stdout/stderr logs exported by
-  `otel-collector`.
-- **Collector local logs:** only the collector itself uses Docker `json-file`
-  rotation so it can still be debugged if the logging pipeline is down.
-
-For collector local logs we keep bounded Docker rotation:
+With the default low-CPU profile, app containers write bounded Docker
+`json-file` logs:
 
 ```bash
 DOCKER_LOG_MAX_SIZE=20m
 DOCKER_LOG_MAX_FILE=30
 ```
 
-SigNoz data retention is enforced by the `signoz-retention` sidecar. It connects
-to the ClickHouse instance inside `signoz` and applies the same policy to logs,
-traces, metrics, meter samples, usage rows, and SigNoz helper/resource tables:
+When `OBSERVABILITY_STACK=true`, SigNoz data retention is enforced by the
+`signoz-retention` sidecar. It connects to the ClickHouse instance inside
+`signoz` and applies the same policy to logs, traces, metrics, meter samples,
+usage rows, and SigNoz helper/resource tables:
 
 ```bash
 SIGNOZ_RETENTION_DAYS=7
