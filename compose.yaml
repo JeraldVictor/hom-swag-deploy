@@ -28,6 +28,7 @@ services:
       REPORTING_REQUEST_TOPIC: ${REPORTING_REQUEST_TOPIC:-homswag.reporting.requests}
       REPORTING_EVENT_TOPIC: ${REPORTING_EVENT_TOPIC:-homswag.reporting.events}
       REPORTING_EVENTS_CONSUMER_GROUP: ${REPORTING_EVENTS_CONSUMER_GROUP:-homswag-server-reporting-events}
+      EARNINGS_SOURCE_TOPIC: ${EARNINGS_SOURCE_TOPIC:-homswag.earnings.sources}
     env_file:
       - ${DEPLOY_ENV_FILE:-.env.prod}
     volumes:
@@ -56,7 +57,10 @@ services:
       REPORTING_EVENT_TOPIC: ${REPORTING_EVENT_TOPIC:-homswag.reporting.events}
       REPORTING_DEAD_LETTER_TOPIC: ${REPORTING_DEAD_LETTER_TOPIC:-homswag.reporting.dead-letter}
       REPORTING_CONSUMER_GROUP: ${REPORTING_CONSUMER_GROUP:-homswag-reporting-workers}
+      EARNINGS_SOURCE_TOPIC: ${EARNINGS_SOURCE_TOPIC:-homswag.earnings.sources}
+      EARNINGS_SOURCE_CONSUMER_GROUP: ${EARNINGS_SOURCE_CONSUMER_GROUP:-homswag-reporting-earnings-sources}
       REPORTING_BUCKET: ${REPORTING_BUCKET:-reports}
+      EARNINGS_MODE: ${EARNINGS_MODE:-shadow}
     env_file:
       - ${DEPLOY_ENV_FILE:-.env.prod}
     volumes:
