@@ -61,6 +61,7 @@ services:
       EARNINGS_SOURCE_CONSUMER_GROUP: ${EARNINGS_SOURCE_CONSUMER_GROUP:-homswag-reporting-earnings-sources}
       REPORTING_BUCKET: ${REPORTING_BUCKET:-reports}
       EARNINGS_MODE: ${EARNINGS_MODE:-shadow}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
     env_file:
       - ${DEPLOY_ENV_FILE:-.env.prod}
     volumes:
