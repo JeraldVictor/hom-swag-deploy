@@ -683,10 +683,16 @@ sync_source() {
     mkdir -p "$dest"
 
     if command -v rsync &>/dev/null; then
-        rsync -a --delete \
+        # Go's module cache is read-only by design. Older build contexts may
+        # contain copied cache files, so make the generated destination
+        # writable before rsync removes excluded/stale content.
+        chmod -R u+w "$dest" 2>/dev/null || true
+        rsync -a --delete --delete-excluded \
             --exclude '.git' \
             --exclude 'node_modules' \
             --exclude '.pnpm-store' \
+            --exclude '.gocache' \
+            --exclude '.gomodcache' \
             --exclude '.nuxt' \
             --exclude '.output' \
             --exclude 'dist' \
@@ -699,6 +705,8 @@ sync_source() {
             --exclude='.git' \
             --exclude='node_modules' \
             --exclude='.pnpm-store' \
+            --exclude='.gocache' \
+            --exclude='.gomodcache' \
             --exclude='.nuxt' \
             --exclude='.output' \
             --exclude='dist' \
@@ -716,6 +724,8 @@ prepare_context() {
         '**/.git' \
         '**/node_modules' \
         '**/.pnpm-store' \
+        '**/.gocache' \
+        '**/.gomodcache' \
         '**/.nuxt' \
         '**/.output' \
         '**/dist' \
