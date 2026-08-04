@@ -23,6 +23,7 @@
 #   ./deploy.sh status               # show running containers
 #   ./deploy.sh health               # validate service HTTP endpoints
 #   ./deploy.sh memory [svc] [opts]  # collect host/container memory evidence
+#   ./deploy.sh valkey status        # inspect managed Valkey memory and key namespaces
 #   ./deploy.sh cleanup [opts]       # preview/apply aged log and temp cleanup
 #   ./deploy.sh help                 # show commands without requiring Docker or an env file
 #   ./deploy.sh certs                # show Caddy-managed TLS certificate status
@@ -78,6 +79,9 @@ Operations:
   logs-all     Print all available logs       (e.g. ./deploy.sh logs-all server)
   memory       Capture VPS/container memory evidence
                Example: ./deploy.sh memory server --samples 60 --interval 10
+  valkey       Inspect or safely trim managed Valkey cache data
+               Example: ./deploy.sh valkey status
+               Example: ./deploy.sh valkey guard --threshold 60 --apply
   cleanup      Preview/apply aged logs and temporary-data cleanup
                Example: ./deploy.sh cleanup --apply
   prune        Interactively remove all unused Docker resources, including volumes
@@ -104,7 +108,7 @@ UNKNOWN_ARGS=()
 
 is_command() {
     case "$1" in
-        deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|memory|cleanup|certs|seed|seed-reports|help)
+        deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|memory|valkey|cleanup|certs|seed|seed-reports|help)
             return 0 ;;
         *)
             return 1 ;;
@@ -148,7 +152,7 @@ for ((i = 0; i < ${#ARGS[@]}; i++)); do
 done
 
 if [[ "${#UNKNOWN_ARGS[@]}" -gt 0 && -z "$COMMAND" ]]; then
-    die "Unknown command '${UNKNOWN_ARGS[0]}'. Use: ${0} [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|memory|cleanup|certs|seed|seed-reports}"
+    die "Unknown command '${UNKNOWN_ARGS[0]}'. Use: ${0} [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|memory|valkey|cleanup|certs|seed|seed-reports}"
 fi
 
 if [[ -z "$COMMAND" ]]; then
@@ -996,6 +1000,26 @@ cmd_memory() {
         "$@"
 }
 
+cmd_valkey() {
+    local action="${1:-status}"
+    if [[ "$#" -gt 0 ]]; then
+        shift
+    fi
+    case "$action" in
+        status|cleanup|guard|help|-h|--help) ;;
+        *) die "Usage: ./deploy.sh valkey {status|cleanup|guard} [--threshold 60] [--apply]" ;;
+    esac
+
+    local container_id
+    container_id="$($COMPOSE ps -q server 2>/dev/null | sed -n '1p')"
+    [[ -n "$container_id" ]] || die "Compose service 'server' is not running"
+
+    log "Running Valkey '$action' from the server container (credentials are not printed) ..."
+    $COMPOSE exec -T server env \
+        VALKEY_MEMORY_WARN_PERCENT="${VALKEY_MEMORY_WARN_PERCENT:-60}" \
+        node --input-type=module - "$action" "$@" < ./scripts/valkey-memory.mjs
+}
+
 cmd_cleanup_storage() {
     local cleanup_args=(
         --root "$SCRIPT_DIR"
@@ -1067,6 +1091,7 @@ case "$COMMAND" in
     status)     cmd_status             ;;
     health)     cmd_health             ;;
     memory)     cmd_memory     "$@"    ;;
+    valkey)     cmd_valkey     "$@"    ;;
     cleanup)    cmd_cleanup_storage "$@" ;;
     help)       print_help             ;;
     certs)      cmd_certs              ;;

@@ -67,3 +67,50 @@ example, this daily cron entry sends its output to journald instead of another f
 Production application logs go to stdout with `LOG_FILE_ENABLED=false`. Compose rotates Docker
 JSON logs according to `DOCKER_LOG_MAX_SIZE` and `DOCKER_LOG_MAX_FILE`. Recreate existing services
 after changing those limits; never truncate files under `/var/lib/docker/containers` manually.
+
+## Managed Valkey memory
+
+Inspect Valkey without printing credentials, values, or full key names:
+
+```bash
+./deploy.sh --env prod valkey status
+```
+
+The report shows Valkey's internal `used_memory/maxmemory` ratio, eviction policy, evictions,
+expiry behavior, and sampled key namespaces. DigitalOcean's dashboard percentage is an OS-level
+cluster metric, so it will not exactly match Valkey's internal ratio.
+
+Preview deletion of application cache keys only:
+
+```bash
+./deploy.sh --env prod valkey cleanup
+```
+
+Apply that cache cleanup explicitly:
+
+```bash
+./deploy.sh --env prod valkey cleanup --apply
+```
+
+The approved patterns are `bff:*`, `admin:leaderboard:*`, and `feature_flags:*`. OTP, rate-limit,
+tracking session, and cart keys are deliberately excluded.
+
+To guard the internal Valkey ratio at 60%, first run a dry run:
+
+```bash
+./deploy.sh --env prod valkey guard --threshold 60
+```
+
+If the status report confirms these cache namespaces account for meaningful memory, the applying
+form can be scheduled every five minutes:
+
+```cron
+*/5 * * * * cd /opt/homswag/deploy && ./deploy.sh --env prod valkey guard --threshold 60 --apply 2>&1 | /usr/bin/logger -t homswag-valkey-guard
+```
+
+This is a cache-pressure guard, not a guaranteed DigitalOcean dashboard ceiling. If non-cache
+namespaces dominate memory, use the status report to shorten their retention or move cache and
+operational state to separate Valkey databases/clusters. Because the current database is mixed,
+do not use `allkeys-lru` without accepting that OTP, rate-limit, session, and cart keys may be
+evicted. Configure a DigitalOcean memory alert at 60% independently, and stop the scheduled guard
+if it repeatedly clears caches without lowering memory to avoid cache churn.
