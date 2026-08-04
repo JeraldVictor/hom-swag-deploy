@@ -28,8 +28,8 @@ RUN pnpm install --no-frozen-lockfile --prod
 # Copy compiled output
 COPY --from=builder /app/dist ./dist
 
-# Create uploads directory
-RUN mkdir -p uploads/temp logs
+# Create runtime data directories. Production bind-mounts these from the deploy host.
+RUN mkdir -p uploads/temp logs diagnostics
 
 EXPOSE 3000
 

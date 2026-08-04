@@ -6,8 +6,8 @@ x-service-logging: &homswag_service_logging
   logging:
     driver: json-file
     options:
-      max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
-      max-file: ${DOCKER_LOG_MAX_FILE:-30}
+      max-size: "${DOCKER_LOG_MAX_SIZE:-20m}"
+      max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
 services:
   # ────────────────────────────────────────────────────────────────
@@ -22,7 +22,8 @@ services:
     expose:
       - "3000"
     environment:
-      NODE_OPTIONS: "--max-http-header-size=65536"
+      NODE_OPTIONS: "--max-http-header-size=65536 --report-on-fatalerror --report-on-signal --report-signal=SIGUSR2 --report-directory=/app/diagnostics --report-exclude-env --report-exclude-network"
+      LOG_FILE_ENABLED: ${LOG_FILE_ENABLED:-false}
       KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka:9092}
       REPORTING_SERVICE_URL: http://reporting:3000
       REPORTING_REQUEST_TOPIC: ${REPORTING_REQUEST_TOPIC:-homswag.reporting.requests}
@@ -35,6 +36,7 @@ services:
       - ${DEPLOY_ENV_FILE:-.env.prod}:/app/.env:ro
       - ${UPLOAD_SOURCE:-./uploads}:/app/uploads
       - ${LOG_PATH:-./logs}:/app/logs
+      - ${DIAGNOSTICS_SOURCE:-./diagnostics}:/app/diagnostics
     depends_on:
       kafka:
         condition: service_healthy
@@ -122,8 +124,8 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
-        max-file: ${DOCKER_LOG_MAX_FILE:-30}
+        max-size: "${DOCKER_LOG_MAX_SIZE:-20m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
   otel-collector:
     image: ${OTEL_COLLECTOR_IMAGE:-otel/opentelemetry-collector-contrib:0.129.1}
@@ -154,8 +156,8 @@ services:
     logging:
       driver: json-file
       options:
-        max-size: ${DOCKER_LOG_MAX_SIZE:-20m}
-        max-file: ${DOCKER_LOG_MAX_FILE:-30}
+        max-size: "${DOCKER_LOG_MAX_SIZE:-20m}"
+        max-file: "${DOCKER_LOG_MAX_FILE:-5}"
 
   portainer:
     <<: *homswag_service_logging

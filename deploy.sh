@@ -22,6 +22,9 @@
 #   ./deploy.sh exec <svc> -- <cmd>  # run a one-off command in container
 #   ./deploy.sh status               # show running containers
 #   ./deploy.sh health               # validate service HTTP endpoints
+#   ./deploy.sh memory [svc] [opts]  # collect host/container memory evidence
+#   ./deploy.sh cleanup [opts]       # preview/apply aged log and temp cleanup
+#   ./deploy.sh help                 # show commands without requiring Docker or an env file
 #   ./deploy.sh certs                # show Caddy-managed TLS certificate status
 # =============================================================================
 set -euo pipefail
@@ -49,6 +52,50 @@ is_truthy() {
     esac
 }
 
+print_help() {
+    cat <<EOF
+Usage: $0 [--env local|prod] <command> [arguments]
+
+Profiles:
+  --env prod   Use .env.prod (default)
+  --env local  Use .env.local and compose.local.yaml
+
+Deployment:
+  deploy       Pull images and perform a health-checked deployment (default)
+  pull         Pull configured images only
+  up           Start services without pulling
+  restart      Restart services             (e.g. ./deploy.sh restart server)
+  recreate     Force-recreate services       (e.g. ./deploy.sh recreate server)
+  refresh      Pull and force-recreate       (e.g. ./deploy.sh refresh server)
+  clean        Rebuild the stack, verify health, and prune old images
+  down         Stop/remove containers while preserving volumes
+
+Operations:
+  status       Show containers
+  health       Validate service endpoints
+  logs         Follow the last 100 log lines  (e.g. ./deploy.sh logs server)
+  dump         Print the last 100 log lines   (e.g. ./deploy.sh dump server)
+  logs-all     Print all available logs       (e.g. ./deploy.sh logs-all server)
+  memory       Capture VPS/container memory evidence
+               Example: ./deploy.sh memory server --samples 60 --interval 10
+  cleanup      Preview/apply aged logs and temporary-data cleanup
+               Example: ./deploy.sh cleanup --apply
+  prune        Interactively remove all unused Docker resources, including volumes
+  certs        Validate Caddy TLS certificate configuration/status
+
+Container/application:
+  shell         Open a container shell         (e.g. ./deploy.sh shell server)
+  exec          Execute a container command    (e.g. ./deploy.sh exec server -- node -v)
+  seed          Run the server database seed
+  seed-reports  Upsert report definitions only
+
+Help:
+  help, -h, --help
+
+See OPERATIONS.md for memory collection, cleanup retention, and scheduling.
+EOF
+}
+
 # ── Parse global flags ─────────────────────────────────────────────────────────
 ENV_PROFILE="${DEPLOY_ENV:-prod}"
 COMMAND=""
@@ -57,7 +104,7 @@ UNKNOWN_ARGS=()
 
 is_command() {
     case "$1" in
-        deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|certs|seed|seed-reports)
+        deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|memory|cleanup|certs|seed|seed-reports|help)
             return 0 ;;
         *)
             return 1 ;;
@@ -81,6 +128,13 @@ for ((i = 0; i < ${#ARGS[@]}; i++)); do
                 REMAINING_ARGS+=("$arg")
             fi
             ;;
+        -h|--help)
+            if [[ -z "$COMMAND" ]]; then
+                COMMAND="help"
+            else
+                REMAINING_ARGS+=("$arg")
+            fi
+            ;;
         *)
             if [[ -z "$COMMAND" ]] && is_command "$arg"; then
                 COMMAND="$arg"
@@ -94,11 +148,17 @@ for ((i = 0; i < ${#ARGS[@]}; i++)); do
 done
 
 if [[ "${#UNKNOWN_ARGS[@]}" -gt 0 && -z "$COMMAND" ]]; then
-    die "Unknown command '${UNKNOWN_ARGS[0]}'. Use: ${0} [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|certs|seed|seed-reports}"
+    die "Unknown command '${UNKNOWN_ARGS[0]}'. Use: ${0} [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|memory|cleanup|certs|seed|seed-reports}"
 fi
 
 if [[ -z "$COMMAND" ]]; then
     COMMAND="deploy"
+fi
+
+# Help must work on a fresh host before env files, Docker, or Podman are configured.
+if [[ "$COMMAND" == "help" ]]; then
+    print_help
+    exit 0
 fi
 
 if [[ "${#REMAINING_ARGS[@]}" -gt 0 ]]; then
@@ -246,6 +306,10 @@ ensure_host_mount_dir() {
 ensure_persistent_mounts() {
     ensure_host_mount_dir "Caddy data" "${CADDY_DATA_SOURCE:-}"
     ensure_host_mount_dir "Caddy config" "${CADDY_CONFIG_SOURCE:-}"
+    ensure_host_mount_dir "Server uploads" "${UPLOAD_SOURCE:-./uploads}"
+    ensure_host_mount_dir "Server logs" "${LOG_PATH:-./logs}"
+    ensure_host_mount_dir "Server diagnostics" "${DIAGNOSTICS_SOURCE:-./diagnostics}"
+    ensure_host_mount_dir "Memory reports" "${MEMORY_REPORTS_PATH:-./memory-diagnostics}"
     if observability_enabled; then
         ensure_host_mount_dir "Portainer data" "${PORTAINER_DATA_SOURCE:-}"
         ensure_host_mount_dir "SigNoz data" "${SIGNOZ_DATA_SOURCE:-}"
@@ -558,6 +622,7 @@ wait_for_new_app_containers() {
 #   6. Settle services back to their configured replica counts.
 # ---------------------------------------------------------------------------
 cmd_safe_deploy() {
+    ensure_persistent_mounts
     cmd_pull
 
     if ! $COMPOSE ps --quiet 2>/dev/null | grep -q .; then
@@ -904,6 +969,54 @@ cmd_status() {
     $COMPOSE ps
 }
 
+cmd_memory() {
+    local service="server"
+    if [[ "${1:-}" != "" && "${1:-}" != --* ]]; then
+        service="$1"
+        shift
+    fi
+
+    if [[ "$service" != "server" ]]; then
+        local argument
+        for argument in "$@"; do
+            [[ "$argument" != "--node-report" ]] || die "--node-report is supported only for the server service"
+        done
+    fi
+
+    local container_id
+    container_id="$($COMPOSE ps -q "$service" 2>/dev/null | sed -n '1p')"
+    [[ -n "$container_id" ]] || die "Compose service '$service' is not running"
+
+    ensure_host_mount_dir "Memory reports" "${MEMORY_REPORTS_PATH:-./memory-diagnostics}"
+    log "Collecting VPS and '$service' memory evidence (container ${container_id:0:12}) ..."
+    ./scripts/analyze-memory.sh \
+        --runtime "${COMPOSE_BIN%% *}" \
+        --container "$container_id" \
+        --output "${MEMORY_REPORTS_PATH:-./memory-diagnostics}" \
+        "$@"
+}
+
+cmd_cleanup_storage() {
+    local cleanup_args=(
+        --root "$SCRIPT_DIR"
+        --runtime "${COMPOSE_BIN%% *}"
+        --logs-dir "${LOG_PATH:-./logs}"
+        --uploads-dir "${UPLOAD_SOURCE:-./uploads}/temp"
+        --diagnostics-dir "${DIAGNOSTICS_SOURCE:-./diagnostics}"
+        --memory-reports-dir "${MEMORY_REPORTS_PATH:-./memory-diagnostics}"
+        --logs-days "${CLEANUP_LOG_DAYS:-7}"
+        --temp-hours "${CLEANUP_TEMP_HOURS:-24}"
+        --diagnostics-days "${CLEANUP_DIAGNOSTICS_DAYS:-7}"
+    )
+
+    local reporting_container
+    while IFS= read -r reporting_container; do
+        [[ -n "$reporting_container" ]] && cleanup_args+=(--reporting-container "$reporting_container")
+    done < <($COMPOSE ps -q reporting 2>/dev/null || true)
+
+    ./scripts/cleanup-vps.sh "${cleanup_args[@]}" "$@"
+}
+
 # Run the compiled seed script inside the server container
 cmd_seed() {
     log "Running seed in compose service: server ..."
@@ -953,34 +1066,14 @@ case "$COMMAND" in
     exec)       cmd_exec      "$@"     ;;
     status)     cmd_status             ;;
     health)     cmd_health             ;;
+    memory)     cmd_memory     "$@"    ;;
+    cleanup)    cmd_cleanup_storage "$@" ;;
+    help)       print_help             ;;
     certs)      cmd_certs              ;;
     seed)       cmd_seed      "$@"     ;;
     seed-reports) cmd_seed_reports     ;;
     *)
-        echo ""
-        echo "Usage: $0 [--env local|prod] {deploy|pull|up|restart|recreate|refresh|clean|down|prune|logs|dump|logs-all|shell|exec|status|health|certs|seed|seed-reports}"
-        echo ""
-        echo "  deploy    Pull images then start all services (default)"
-        echo "  pull      Pull latest images from the configured registry only"
-        echo "  up        Start services without pulling images"
-        echo "  restart   Restart containers          (e.g. ./deploy.sh restart server)"
-        echo "  recreate  Force-recreate containers   (e.g. ./deploy.sh recreate server)"
-        echo "  refresh   Pull + force-recreate       (e.g. ./deploy.sh refresh server)"
-        echo "  clean     Remove stack, pull fresh images, start, verify health, then prune"
-        echo "  down      Stop and remove containers (volumes kept)"
-        echo "  prune     Remove ALL unused Docker resources (docker system prune -a --volumes)"
-        echo "  logs      Follow logs, last 100 lines  (e.g. ./deploy.sh logs app)"
-        echo "  dump      Print last 100 lines, no follow (e.g. ./deploy.sh dump app)"
-        echo "  logs-all  Print ALL logs for a service   (e.g. ./deploy.sh logs-all server)"
-        echo "  shell     Open terminal in container     (e.g. ./deploy.sh shell server)"
-        echo "  exec      Run command in container       (e.g. ./deploy.sh exec server -- pnpm seed:prod -- --upsert)"
-        echo "  status    Show running containers"
-        echo "  health    Validate service HTTP endpoints"
-        echo "  certs     Issue/renew trusted Let's Encrypt TLS certificates"
-        echo "  seed      Run database seed inside the server container"
-        echo "             (e.g. ./deploy.sh seed --upsert --only=locations,offices,menu,products)"
-        echo "  seed-reports  Upsert report definitions only"
-        echo ""
+        print_help
         exit 1
         ;;
 esac

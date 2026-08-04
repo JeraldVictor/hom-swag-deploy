@@ -18,6 +18,9 @@ nginx/certs/
 
 # Logs
 logs
+diagnostics
+memory-diagnostics
+uploads/temp
 *.log
 npm-debug.log*
 yarn-debug.log*

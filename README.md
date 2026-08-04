@@ -142,6 +142,10 @@ traffic.
 
 All commands below are run from the `deploy/` folder.
 
+```bash
+./deploy.sh help    # command reference; does not require Docker or an env file
+```
+
 Production is the default profile. Local commands must always pass
 `--env local` so localhost images and ports are never used accidentally for
 production.
@@ -276,6 +280,9 @@ Useful production operations:
 ./deploy.sh --env prod pull            # pull registry images only
 ./deploy.sh --env prod status          # show running containers
 ./deploy.sh --env prod logs server     # follow server logs
+./deploy.sh --env prod memory server --samples 60 --interval 10
+./deploy.sh --env prod cleanup         # dry-run aged log/temp cleanup
+./deploy.sh --env prod cleanup --apply # apply after reviewing dry run
 ./deploy.sh --env prod restart caddy   # restart Caddy
 ./deploy.sh --env prod certs           # show Caddy-managed certificate status
 PROXY_STACK=nginx ./deploy.sh --env prod up      # rollback to nginx proxy
@@ -302,6 +309,8 @@ Production safety rules:
 - Push is allowed only for production profile with `.env.prod`.
 - Prefer `./deploy.sh --env prod deploy` for normal PROD rollout; it performs
   the graceful scale-up, health validation, and old-container removal flow.
+- VPS memory reports, log/temp retention, and optional Docker garbage collection are documented
+  in [`OPERATIONS.md`](./OPERATIONS.md).
 
 ### Observability + Operations
 
