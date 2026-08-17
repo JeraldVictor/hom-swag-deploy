@@ -1,5 +1,5 @@
 # ── Stage 1: Build ────────────────────────────────────────────────────────────
-# TanStack Start (Nitro SSR) — output lands in .output/
+# TanStack Start (Nitro SSR) - output lands in .output/
 FROM node:22-alpine AS builder
 
 WORKDIR /app
@@ -39,7 +39,7 @@ FROM node:22-alpine AS runner
 
 WORKDIR /app
 
-# Nitro output is self-contained — copy only the .output directory
+# Nitro output is self-contained - copy only the .output directory
 COPY --from=builder /app/.output ./.output
 
 EXPOSE 3000

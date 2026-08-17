@@ -1,4 +1,4 @@
-# HomSwag — nginx fallback proxy overlay
+# HomSwag - nginx fallback proxy overlay
 # Use with: PROXY_STACK=nginx ./deploy.sh --env prod ...
 
 services:

@@ -48,7 +48,7 @@ coverage
 
 
 # === macOS System Files ===
-# Common macOS system files and helper files — safe to ignore in git
+# Common macOS system files and helper files - safe to ignore in git
 # See: https://www.gitignore.io/api/macos
 # macOS Finder metadata
 # Already listed above but include here to clarify purpose and for future-proofing

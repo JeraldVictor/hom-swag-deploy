@@ -1,4 +1,4 @@
-# Never copy node_modules from the host — they are installed inside the container
+# Never copy node_modules from the host - they are installed inside the container
 repos/*/node_modules
 repos/*/.pnpm-store
 repos/*/.nuxt

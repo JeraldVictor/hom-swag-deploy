@@ -6,7 +6,7 @@ WORKDIR /app
 # Enable pnpm via corepack
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Install dependencies (cache layer — lockfile not committed in server repo)
+# Install dependencies (cache layer - lockfile not committed in server repo)
 COPY repos/server/package.json ./
 RUN pnpm install --no-frozen-lockfile
 

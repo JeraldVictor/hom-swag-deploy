@@ -1,4 +1,4 @@
-# HomSwag — Local Docker Compose overrides
+# HomSwag - Local Docker Compose overrides
 # Use only with: ./deploy.sh --env local ...
 
 services:

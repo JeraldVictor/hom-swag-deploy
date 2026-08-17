@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HomSwag — Build deployment images
+# HomSwag - Build deployment images
 #
 # Usage:
 #   ./build-images.sh                         # build production deployment images locally
@@ -626,7 +626,7 @@ fi
 if command -v docker &>/dev/null; then
     CONTAINER_BIN="docker"
 elif command -v podman &>/dev/null; then
-    warn "docker not found — falling back to podman"
+    warn "docker not found - falling back to podman"
     CONTAINER_BIN="podman"
 else
     die "Neither docker nor podman found. Please install one of them."
@@ -700,7 +700,7 @@ sync_source() {
             --exclude 'tmp' \
             "$source"/ "$dest"/
     else
-        warn "rsync not found — using tar fallback without delete cleanup"
+        warn "rsync not found - using tar fallback without delete cleanup"
         (cd "$source" && tar \
             --exclude='.git' \
             --exclude='node_modules' \
@@ -854,7 +854,7 @@ build_service() {
 
 echo ""
 echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
-echo -e "${BOLD}║      HomSwag — Image Build           ║${NC}"
+echo -e "${BOLD}║      HomSwag - Image Build           ║${NC}"
 echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
 echo -e "  Env file : ${BOLD}${ENV_FILE}${NC}"
 echo -e "  Image registry : ${BOLD}${IMAGE_REGISTRY}${NC}"

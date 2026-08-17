@@ -1,5 +1,5 @@
-# HomSwag — Docker/Podman Compose
-# HomSwag images are pulled from IMAGE_REGISTRY — no local build required
+# HomSwag - Docker/Podman Compose
+# HomSwag images are pulled from IMAGE_REGISTRY - no local build required
 # Public traffic is served by the selected proxy, Caddy by default.
 
 x-service-logging: &homswag_service_logging
@@ -11,7 +11,7 @@ x-service-logging: &homswag_service_logging
 
 services:
   # ────────────────────────────────────────────────────────────────
-  # Applications (pre-built images — pulled from IMAGE_REGISTRY)
+  # Applications (pre-built images - pulled from IMAGE_REGISTRY)
   # ────────────────────────────────────────────────────────────────
 
   server:

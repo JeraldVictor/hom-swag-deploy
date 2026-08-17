@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# HomSwag — Deploy script (image-based — no git pull, no local build)
+# HomSwag - Deploy script (image-based - no git pull, no local build)
 #
 # Usage:
 #   ./deploy.sh                      # production deploy: pull images from registry + start all services
@@ -218,7 +218,7 @@ if command -v docker &>/dev/null; then
         fi
     fi
 elif command -v podman &>/dev/null; then
-    warn "docker not found — falling back to podman compose"
+    warn "docker not found - falling back to podman compose"
     COMPOSE_BIN="podman compose"
 else
     die "Neither docker nor podman found. Please install one of them."
@@ -615,7 +615,7 @@ wait_for_new_app_containers() {
 }
 
 # ---------------------------------------------------------------------------
-# cmd_safe_deploy — graceful production deployment
+# cmd_safe_deploy - graceful production deployment
 #
 # Flow:
 #   1. Pull new images while live containers keep serving traffic.
@@ -630,7 +630,7 @@ cmd_safe_deploy() {
     cmd_pull
 
     if ! $COMPOSE ps --quiet 2>/dev/null | grep -q .; then
-        log "No existing stack detected — performing standard deploy"
+        log "No existing stack detected - performing standard deploy"
         cmd_up
         cmd_health
         run_report_seed_if_enabled
@@ -687,7 +687,7 @@ cmd_safe_deploy() {
 cmd_deploy() {
     echo ""
     echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
-    echo -e "${BOLD}║      HomSwag — Deploy                ║${NC}"
+    echo -e "${BOLD}║      HomSwag - Deploy                ║${NC}"
     echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
     echo -e "  Env profile : ${BOLD}${ENV_PROFILE}${NC}  (${ENV_FILE})"
     echo ""
@@ -713,7 +713,7 @@ cmd_health() {
     local interval=5
     local all_ok=true
 
-    # Parallel arrays — avoids associative arrays (bash 3.2 on macOS)
+    # Parallel arrays - avoids associative arrays (bash 3.2 on macOS)
     local svcs=("server" "reporting" "admin" "app" "apex-app" "partner")
     local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$APEX_APP_DOMAIN" "$PARTNER_DOMAIN")
     local paths=("/health" "/health" "/health" "/" "/" "/health")
@@ -871,7 +871,7 @@ cmd_recreate() {
     $COMPOSE ps
 }
 
-# Pull latest image(s) then force-recreate — scoped to one or all services
+# Pull latest image(s) then force-recreate - scoped to one or all services
 cmd_refresh() {
     local svcs=("$@")
     if [[ "${#svcs[@]}" -gt 0 ]]; then
@@ -892,7 +892,7 @@ cmd_refresh() {
 cmd_clean() {
     echo ""
     echo -e "${BOLD}╔══════════════════════════════════════╗${NC}"
-    echo -e "${BOLD}║      HomSwag — Clean Deploy          ║${NC}"
+    echo -e "${BOLD}║      HomSwag - Clean Deploy          ║${NC}"
     echo -e "${BOLD}╚══════════════════════════════════════╝${NC}"
     echo -e "  Env profile : ${BOLD}${ENV_PROFILE}${NC}  (${ENV_FILE})"
     echo -e "  Remove volumes : ${BOLD}${CLEAN_REMOVE_VOLUMES:-false}${NC}"
