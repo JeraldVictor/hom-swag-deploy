@@ -24,10 +24,11 @@ ARG HS_FEATURE_DIRECTIONS=false
 ENV NODE_OPTIONS="--max-old-space-size=4096" \
     PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 
-RUN printf 'VITE_BFF_API_URL=%s\nVITE_BFF_BASE_URL=%s\nVITE_MEDIA_BASE_URL=%s\nVITE_WS_URL=%s\nVITE_GOOGLE_MAPS_API_KEY=%s\nVITE_FEATURE_MAPS=%s\nVITE_FEATURE_DIRECTIONS=%s\n' \
+RUN : > .env \
+    && printf 'VITE_BFF_API_URL=%s\nVITE_BFF_BASE_URL=%s\nVITE_MEDIA_BASE_URL=%s\nVITE_WS_URL=%s\nVITE_GOOGLE_MAPS_API_KEY=%s\nVITE_FEATURE_MAPS=%s\nVITE_FEATURE_DIRECTIONS=%s\n' \
         "$HS_PARTNER_BFF_API_URL" "$HS_PARTNER_BFF_BASE_URL" "$HS_MEDIA_URL" "$HS_PARTNER_WS_URL" "$HS_GOOGLE_MAPS_API_KEY" "$HS_FEATURE_MAPS" "$HS_FEATURE_DIRECTIONS" > .env.prod \
     && pnpm run build \
-    && rm -f .env.prod
+    && rm -f .env .env.prod
 
 # ── Stage 2: Serve with nginx ─────────────────────────────────────────────────
 FROM nginx:alpine AS runner
