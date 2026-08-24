@@ -353,7 +353,7 @@ run_node_test_gate() {
     if npm_script_exists "$source" "test"; then
         test_cmd=(pnpm test)
     elif npm_script_exists "$source" "test:unit"; then
-        test_cmd=(pnpm test:unit -- --run)
+        test_cmd=(pnpm test:unit --run)
     elif rg -q '"vitest"' "$source/package.json"; then
         test_cmd=(pnpm exec vitest run)
     else
