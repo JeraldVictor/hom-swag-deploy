@@ -167,6 +167,14 @@
 	}
 }
 
+{$MOBILE_DOMAIN} {
+	encode zstd gzip
+
+	reverse_proxy mobile:80 {
+		import common_proxy_headers
+	}
+}
+
 {$APEX_APP_DOMAIN} {
 	redir https://{$APP_DOMAIN}{uri} 308
 }

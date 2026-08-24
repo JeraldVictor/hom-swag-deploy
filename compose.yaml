@@ -139,6 +139,7 @@ services:
     environment:
       DEPLOYMENT_ENVIRONMENT: ${DEPLOYMENT_ENVIRONMENT:-production}
       OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_APP: ${OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_APP:-https://www.homswag.com}
+      OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_MOBILE: ${OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_MOBILE:-https://mobile.homswag.com}
       OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_ADMIN: ${OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_ADMIN:-https://admin.homswag.com}
       OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_PARTNER: ${OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_PARTNER:-https://partner.homswag.com}
     volumes:
@@ -238,6 +239,16 @@ services:
     networks:
       - homswag-net
 
+  mobile:
+    <<: *homswag_service_logging
+    image: ${MOBILE_IMAGE:-ghcr.io/jeraldvictor/hom-swag-mobile:latest}
+    pull_policy: ${MOBILE_PULL_POLICY:-always}
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - homswag-net
+
   caddy:
     <<: *homswag_service_logging
     image: ${CADDY_IMAGE:-docker.io/caddy:2.8-alpine}
@@ -256,6 +267,7 @@ services:
       API_DOMAIN: ${API_DOMAIN:-api.alpha.homswag.com}
       REPORTING_DOMAIN: ${REPORTING_DOMAIN:-reporting.alpha.homswag.com}
       PARTNER_DOMAIN: ${PARTNER_DOMAIN:-partner.homswag.com}
+      MOBILE_DOMAIN: ${MOBILE_DOMAIN:-mobile.homswag.com}
       SIGNOZ_DOMAIN: ${SIGNOZ_DOMAIN:-signoz.homswag.com}
       PORTAINER_DOMAIN: ${PORTAINER_DOMAIN:-ports.homswag.com}
       MONITOR_DOMAIN: ${MONITOR_DOMAIN:-monitor.homswag.com}
@@ -273,6 +285,8 @@ services:
       partner:
         condition: service_started
       app:
+        condition: service_started
+      mobile:
         condition: service_started
     networks:
       - homswag-net

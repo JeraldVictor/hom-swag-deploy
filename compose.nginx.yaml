@@ -24,6 +24,7 @@ services:
       API_DOMAIN: ${API_DOMAIN:-api.alpha.homswag.com}
       REPORTING_DOMAIN: ${REPORTING_DOMAIN:-reporting.alpha.homswag.com}
       PARTNER_DOMAIN: ${PARTNER_DOMAIN:-partner.homswag.com}
+      MOBILE_DOMAIN: ${MOBILE_DOMAIN:-mobile.homswag.com}
       SIGNOZ_DOMAIN: ${SIGNOZ_DOMAIN:-signoz.homswag.com}
       PORTAINER_DOMAIN: ${PORTAINER_DOMAIN:-ports.homswag.com}
       MONITOR_DOMAIN: ${MONITOR_DOMAIN:-monitor.homswag.com}
@@ -43,6 +44,8 @@ services:
       partner:
         condition: service_started
       app:
+        condition: service_started
+      mobile:
         condition: service_started
     networks:
       - homswag-net

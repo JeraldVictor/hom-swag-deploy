@@ -5,7 +5,7 @@ Deployment workspace for running the full HomSwag stack with Podman/Docker Compo
 ## What this folder does
 
 - Uses app sources from `repos/` when present, or from the sibling workspace folders
-- Builds images for `server`, `reporting`, `admin`, `app`, and `kafka`
+- Builds images for `server`, `reporting`, `admin`, `app`, `mobile`, `partner`, and `kafka`
 - Pulls/deploys production application images from GitHub Container Registry
 - Pushes release images to `ghcr.io/jeraldvictor` only when requested
 - Starts Kafka, Caddy, and application containers in production
@@ -20,11 +20,9 @@ Deployment workspace for running the full HomSwag stack with Podman/Docker Compo
 
 - `podman` (preferred) or `docker`
 - `git`
-- Access to these repositories:
-  - `REPO_SERVER`
-  - `REPO_REPORTING`
-  - `REPO_ADMIN`
-  - `REPO_APP`
+- Access to the server, reporting, admin, app, partner, and
+  `hom-swag-mobile` source folders (either under `deploy/repos/` or as sibling
+  workspace folders)
 
 ---
 
@@ -87,6 +85,7 @@ MinIO, or Mongo Express containers.
 ### Current production domains
 
 - Client app: `https://www.homswag.com`
+- Mobile customer app: `https://mobile.homswag.com`
 - Client app canonical redirect: `https://homswag.com` -> `https://www.homswag.com`
 - Admin: `https://admin.homswag.com`
 - API: `https://api.alpha.homswag.com`
@@ -264,7 +263,7 @@ when publishing release images and deploying PROD:
 ./build-images.sh --env prod --no-cache --push
 
 # Build/push selected production services.
-./build-images.sh --env prod server reporting --push
+./build-images.sh --env prod server reporting mobile --push
 ./build-images.sh --env prod admin app --push
 
 # Graceful production deploy. This is also the default if --env is omitted.
@@ -575,6 +574,7 @@ SERVER_IMAGE=ghcr.io/jeraldvictor/hom-swag-server:latest
 REPORTING_IMAGE=ghcr.io/jeraldvictor/hom-swag-reporting:latest
 ADMIN_IMAGE=ghcr.io/jeraldvictor/hom-swag-admin:latest
 APP_IMAGE=ghcr.io/jeraldvictor/hom-swag-app:latest
+MOBILE_IMAGE=ghcr.io/jeraldvictor/hom-swag-mobile:latest
 KAFKA_IMAGE=ghcr.io/jeraldvictor/hom-swag-kafka:latest
 ```
 
@@ -605,6 +605,7 @@ SERVER_REPLICAS=1
 REPORTING_REPLICAS=1
 ADMIN_REPLICAS=1
 APP_REPLICAS=1
+MOBILE_REPLICAS=1
 DEPLOY_REPLICAS=2
 ```
 
@@ -622,6 +623,7 @@ still use compose service names such as `server` and `reporting`.
 http://localhost:3000/health           # API server
 http://localhost:5173                  # admin
 http://localhost:8080                  # customer app
+http://localhost:3100                  # mobile customer app web target
 http://localhost:8090                  # partner app
 http://localhost:3003/health           # reporting service
 http://localhost:9101                  # MinIO console

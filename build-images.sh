@@ -11,7 +11,7 @@
 #   ./build-images.sh server admin            # build selected services
 #   ./build-images.sh --image-registry ghcr.io/owner --push-registry ghcr.io/owner
 #
-# Services: server, reporting, admin, app, partner
+# Services: server, reporting, admin, app, mobile, partner
 # Builds/tags local images under IMAGE_REGISTRY. Only --push tags and pushes
 # the matching image to PUSH_REGISTRY.
 # =============================================================================
@@ -46,7 +46,7 @@ SERVICES=()
 
 is_service() {
     case "$1" in
-        server|reporting|admin|app|partner|all) return 0 ;;
+        server|reporting|admin|app|mobile|partner|all) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -256,6 +256,7 @@ print_resolved_env() {
     echo -e "  REPORTING_IMAGE_TAG   : ${BOLD}${REPORTING_IMAGE_TAG:-latest}${NC}"
     echo -e "  ADMIN_IMAGE_TAG       : ${BOLD}${ADMIN_IMAGE_TAG:-latest}${NC}"
     echo -e "  APP_IMAGE_TAG         : ${BOLD}${APP_IMAGE_TAG:-latest}${NC}"
+    echo -e "  MOBILE_IMAGE_TAG      : ${BOLD}${MOBILE_IMAGE_TAG:-latest}${NC}"
     echo -e "  PARTNER_IMAGE_TAG     : ${BOLD}${PARTNER_IMAGE_TAG:-latest}${NC}"
     echo -e "  NO_CACHE              : ${BOLD}${NO_CACHE}${NC}"
     echo ""
@@ -370,7 +371,7 @@ run_test_gate_for_service() {
     local service="$1"
 
     case "$service" in
-        server|admin|app|partner)
+        server|admin|app|mobile|partner)
             run_node_test_gate "$service" "$(require_source "$service")"
             ;;
         reporting)
@@ -412,6 +413,35 @@ PUBLIC_API_BASE_URL=$api_url
 MEDIA_BASE_URL=$media_url
 BFF_BASE_URL=$server_bff
 VITE_BFF_BASE_URL=$bff_url
+EOF
+            cp "$target_dir/.env.prod" "$target_dir/.env.production"
+            ;;
+        mobile)
+            local api_url media_url bff_url ws_url
+            api_url="$(frontend_api_url)"
+            media_url="$(frontend_media_url)"
+            bff_url="$(frontend_bff_url)"
+            ws_url="${VITE_WS_URL:-}"
+            if [[ -z "$ws_url" ]]; then
+                ws_url="${api_url/https:/wss:}"
+                ws_url="${ws_url/http:/ws:}"
+            fi
+
+            require_prod_url VITE_API_BASE_URL "$api_url"
+            require_prod_url VITE_MEDIA_BASE_URL "$media_url"
+            require_prod_url VITE_BFF_BASE_URL "$bff_url"
+            require_prod_url VITE_WS_URL "$ws_url"
+
+            cat > "$target_dir/.env.prod" <<EOF
+VITE_API_BASE_URL=$api_url
+VITE_AUTH_API_BASE_URL=$api_url
+VITE_BFF_API_URL=$bff_url
+VITE_BFF_BASE_URL=$bff_url
+VITE_MEDIA_BASE_URL=$media_url
+VITE_WS_URL=$ws_url
+VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY:-}
+VITE_FEATURE_MAPS=${VITE_FEATURE_MAPS:-true}
+VITE_FEATURE_DIRECTIONS=${VITE_FEATURE_DIRECTIONS:-true}
 EOF
             cp "$target_dir/.env.prod" "$target_dir/.env.production"
             ;;
@@ -573,7 +603,7 @@ while [[ "$#" -gt 0 ]]; do
         *)
             if is_service "$1"; then
                 if [[ "$1" == "all" ]]; then
-                    SERVICES=(server reporting admin app partner)
+                    SERVICES=(server reporting admin app mobile partner)
                 else
                     SERVICES+=("$1")
                 fi
@@ -620,7 +650,7 @@ IMAGE_REGISTRY="${IMAGE_REGISTRY%/}"
 PUSH_REGISTRY="${PUSH_REGISTRY%/}"
 
 if [[ "${#SERVICES[@]}" -eq 0 ]]; then
-    SERVICES=(server reporting admin app partner)
+    SERVICES=(server reporting admin app mobile partner)
 fi
 
 if command -v docker &>/dev/null; then
@@ -640,6 +670,9 @@ require_source() {
     if [[ "$service" == "partner" ]]; then
         deploy_repo="$SCRIPT_DIR/repos/partner"
         workspace_repo="$WORKSPACE_DIR/HomSwagTeam"
+    elif [[ "$service" == "mobile" ]]; then
+        deploy_repo="$SCRIPT_DIR/repos/mobile"
+        workspace_repo="$WORKSPACE_DIR/hom-swag-mobile"
     fi
 
     if [[ -d "$deploy_repo" ]]; then
@@ -663,6 +696,7 @@ image_tag_for() {
         reporting) echo "${REPORTING_IMAGE_TAG:-latest}" ;;
         admin)     echo "${ADMIN_IMAGE_TAG:-latest}" ;;
         app)       echo "${APP_IMAGE_TAG:-latest}" ;;
+        mobile)    echo "${MOBILE_IMAGE_TAG:-latest}" ;;
         partner)   echo "${PARTNER_IMAGE_TAG:-latest}" ;;
     esac
 }
@@ -689,6 +723,8 @@ sync_source() {
         chmod -R u+w "$dest" 2>/dev/null || true
         rsync -a --delete --delete-excluded \
             --exclude '.git' \
+            --exclude '.env' \
+            --exclude '.env.*' \
             --exclude 'node_modules' \
             --exclude '.pnpm-store' \
             --exclude '.gocache' \
@@ -697,12 +733,17 @@ sync_source() {
             --exclude '.output' \
             --exclude 'dist' \
             --exclude 'coverage' \
+            --exclude 'platforms' \
+            --exclude '*.keystore' \
+            --exclude '*.jks' \
             --exclude 'tmp' \
             "$source"/ "$dest"/
     else
         warn "rsync not found - using tar fallback without delete cleanup"
         (cd "$source" && tar \
             --exclude='.git' \
+            --exclude='.env' \
+            --exclude='.env.*' \
             --exclude='node_modules' \
             --exclude='.pnpm-store' \
             --exclude='.gocache' \
@@ -711,6 +752,9 @@ sync_source() {
             --exclude='.output' \
             --exclude='dist' \
             --exclude='coverage' \
+            --exclude='platforms' \
+            --exclude='*.keystore' \
+            --exclude='*.jks' \
             --exclude='tmp' \
             -cf - .) | (cd "$dest" && tar -xf -)
     fi
@@ -722,6 +766,8 @@ prepare_context() {
 
     printf '%s\n' \
         '**/.git' \
+        '**/.env' \
+        '**/.env.*' \
         '**/node_modules' \
         '**/.pnpm-store' \
         '**/.gocache' \
@@ -730,6 +776,9 @@ prepare_context() {
         '**/.output' \
         '**/dist' \
         '**/coverage' \
+        '**/platforms' \
+        '**/*.keystore' \
+        '**/*.jks' \
         '**/.DS_Store' > "$context_dir/.dockerignore"
 
     local service source
@@ -738,6 +787,12 @@ prepare_context() {
         log "Preparing $service source from $source"
         sync_source "$source" "$context_dir/repos/$service"
         write_frontend_env_files "$service" "$context_dir/repos/$service"
+        if [[ "$service" == "mobile" ]]; then
+            local customer_app_source
+            customer_app_source="$(require_source app)"
+            [[ -f "$customer_app_source/public/HomSwagLogo.png" ]] || die "Mobile web build requires app/public/HomSwagLogo.png"
+            sync_source "$customer_app_source/public" "$context_dir/repos/mobile-public"
+        fi
     done
 
     if [[ -d "$SCRIPT_DIR/nginx" ]]; then
@@ -765,7 +820,7 @@ build_service() {
         args+=(--no-cache)
     fi
 
-    if [[ "$service" == "admin" || "$service" == "app" || "$service" == "partner" ]]; then
+    if [[ "$service" == "admin" || "$service" == "app" || "$service" == "mobile" || "$service" == "partner" ]]; then
         local api_url login_url media_url
         api_url="$(frontend_api_url)"
         login_url="$(frontend_login_url)"
@@ -792,6 +847,23 @@ build_service() {
         args+=(--build-arg "HS_BFF_URL=$bff_url")
         args+=(--build-arg "HS_SERVER_BFF_URL=$server_bff")
         args+=(--build-arg "HS_RUM_SERVICE_NAME=${VITE_APP_RUM_SERVICE_NAME:-customer-app}")
+    fi
+
+    if [[ "$service" == "mobile" ]]; then
+        local mobile_bff_url mobile_ws_url
+        mobile_bff_url="$(frontend_bff_url)"
+        mobile_ws_url="${VITE_WS_URL:-}"
+        if [[ -z "$mobile_ws_url" ]]; then
+            mobile_ws_url="${api_url/https:/wss:}"
+            mobile_ws_url="${mobile_ws_url/http:/ws:}"
+        fi
+        require_prod_url VITE_BFF_BASE_URL "$mobile_bff_url"
+        require_prod_url VITE_WS_URL "$mobile_ws_url"
+        args+=(--build-arg "HS_BFF_URL=$mobile_bff_url")
+        args+=(--build-arg "HS_WS_URL=$mobile_ws_url")
+        args+=(--build-arg "HS_MAPS_BROWSER_VALUE=${VITE_GOOGLE_MAPS_API_KEY:-}")
+        args+=(--build-arg "HS_FEATURE_MAPS=${VITE_FEATURE_MAPS:-true}")
+        args+=(--build-arg "HS_FEATURE_DIRECTIONS=${VITE_FEATURE_DIRECTIONS:-true}")
     fi
 
     if [[ "$service" == "admin" ]]; then

@@ -148,6 +148,10 @@ services:
     ports:
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${APP_PORT:-3002}:3000"
 
+  mobile:
+    ports:
+      - "${HOST_BIND_ADDRESS:-127.0.0.1}:${MOBILE_PORT:-3100}:80"
+
   caddy:
     ports: !override
       - "${HOST_BIND_ADDRESS:-127.0.0.1}:${CADDY_HTTP_PORT:-8088}:80"

@@ -244,6 +244,7 @@ COMPOSE="$COMPOSE_BIN $COMPOSE_PROFILES_ARGS --env-file $ENV_FILE $COMPOSE_FILES
 SERVER_PORT="${SERVER_PORT:-3000}"
 ADMIN_PORT="${ADMIN_PORT:-3001}"
 APP_PORT="${APP_PORT:-3002}"
+MOBILE_PORT="${MOBILE_PORT:-3100}"
 PARTNER_PORT="${PARTNER_PORT:-3004}"
 REPORTING_PORT="${REPORTING_PORT:-3003}"
 CADDY_HTTP_PORT="${CADDY_HTTP_PORT:-${NGINX_HTTP_PORT:-80}}"
@@ -263,6 +264,7 @@ ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.homswag.com}"
 API_DOMAIN="${API_DOMAIN:-api.alpha.homswag.com}"
 REPORTING_DOMAIN="${REPORTING_DOMAIN:-reporting.alpha.homswag.com}"
 PARTNER_DOMAIN="${PARTNER_DOMAIN:-partner.homswag.com}"
+MOBILE_DOMAIN="${MOBILE_DOMAIN:-mobile.homswag.com}"
 SIGNOZ_DOMAIN="${SIGNOZ_DOMAIN:-signoz.homswag.com}"
 PORTAINER_DOMAIN="${PORTAINER_DOMAIN:-ports.homswag.com}"
 MONITOR_DOMAIN="${MONITOR_DOMAIN:-monitor.homswag.com}"
@@ -270,6 +272,7 @@ SERVER_REPLICAS="${SERVER_REPLICAS:-1}"
 REPORTING_REPLICAS="${REPORTING_REPLICAS:-1}"
 ADMIN_REPLICAS="${ADMIN_REPLICAS:-1}"
 APP_REPLICAS="${APP_REPLICAS:-1}"
+MOBILE_REPLICAS="${MOBILE_REPLICAS:-1}"
 PARTNER_REPLICAS="${PARTNER_REPLICAS:-1}"
 DEPLOY_REPLICAS="${DEPLOY_REPLICAS:-2}"
 
@@ -367,6 +370,7 @@ cmd_up() {
         --scale reporting="$REPORTING_REPLICAS" \
         --scale admin="$ADMIN_REPLICAS" \
         --scale app="$APP_REPLICAS" \
+        --scale mobile="$MOBILE_REPLICAS" \
         --scale partner="$PARTNER_REPLICAS"
     if [[ "$ENV_PROFILE" == "local" ]]; then
         $COMPOSE up -d --force-recreate "$PROXY_SERVICE"
@@ -381,6 +385,7 @@ cmd_up() {
         echo -e "  ${BOLD}Reporting${NC}-> http://localhost:${REPORTING_PORT}"
         echo -e "  ${BOLD}Admin${NC}    -> http://localhost:${ADMIN_PORT}"
         echo -e "  ${BOLD}App${NC}      -> http://localhost:${APP_PORT}"
+        echo -e "  ${BOLD}Mobile${NC}   -> http://localhost:${MOBILE_PORT}"
         echo -e "  ${BOLD}Partner${NC}  -> http://localhost:${PARTNER_PORT}"
         if observability_enabled; then
             echo -e "  ${BOLD}SigNoz${NC}   -> http://localhost:${SIGNOZ_HTTP_PORT:-9080}"
@@ -394,6 +399,7 @@ cmd_up() {
         echo -e "  ${BOLD}Admin${NC}    -> https://${ADMIN_DOMAIN}"
         echo -e "  ${BOLD}App${NC}      -> https://${APP_DOMAIN}"
         echo -e "  ${BOLD}Apex App${NC} -> https://${APEX_APP_DOMAIN} -> https://${APP_DOMAIN}"
+        echo -e "  ${BOLD}Mobile${NC}   -> https://${MOBILE_DOMAIN}"
         echo -e "  ${BOLD}Partner${NC}  -> https://${PARTNER_DOMAIN}"
         if observability_enabled; then
             echo -e "  ${BOLD}SigNoz${NC}   -> https://${SIGNOZ_DOMAIN}"
@@ -416,6 +422,7 @@ app_image_for() {
         reporting) echo "${REPORTING_IMAGE:-${registry}/hom-swag-reporting:${REPORTING_IMAGE_TAG:-latest}}" ;;
         admin)     echo "${ADMIN_IMAGE:-${registry}/hom-swag-admin:${ADMIN_IMAGE_TAG:-latest}}" ;;
         app)       echo "${APP_IMAGE:-${registry}/hom-swag-app:${APP_IMAGE_TAG:-latest}}" ;;
+        mobile)    echo "${MOBILE_IMAGE:-${registry}/hom-swag-mobile:${MOBILE_IMAGE_TAG:-latest}}" ;;
         partner)   echo "${PARTNER_IMAGE:-${registry}/hom-swag-partner:${PARTNER_IMAGE_TAG:-latest}}" ;;
         *)         die "Unknown app service: $service" ;;
     esac
@@ -427,6 +434,7 @@ replicas_for() {
         reporting) echo "$REPORTING_REPLICAS" ;;
         admin)     echo "$ADMIN_REPLICAS" ;;
         app)       echo "$APP_REPLICAS" ;;
+        mobile)    echo "$MOBILE_REPLICAS" ;;
         partner)   echo "$PARTNER_REPLICAS" ;;
         *)         die "Unknown app service: $1" ;;
     esac
@@ -438,6 +446,7 @@ health_target_for() {
         reporting) echo "3000 /health" ;;
         admin)     echo "80 /" ;;
         app)       echo "3000 /" ;;
+        mobile)    echo "80 /health" ;;
         partner)   echo "80 /" ;;
         *)         die "Unknown app service: $1" ;;
     esac
@@ -609,7 +618,7 @@ wait_for_new_service_containers() {
 
 wait_for_new_app_containers() {
     local service
-    for service in server reporting admin app partner; do
+    for service in server reporting admin app mobile partner; do
         wait_for_new_service_containers "$service" "$(app_image_for "$service")" "$(replicas_for "$service")"
     done
 }
@@ -641,11 +650,12 @@ cmd_safe_deploy() {
 
     echo ""
     echo -e "${BOLD}━━━  Scaling new replicas  ━━━${NC}"
-    local server_deploy_replicas reporting_deploy_replicas admin_deploy_replicas app_deploy_replicas partner_deploy_replicas
+    local server_deploy_replicas reporting_deploy_replicas admin_deploy_replicas app_deploy_replicas mobile_deploy_replicas partner_deploy_replicas
     server_deploy_replicas="$(deploy_replicas_for server)"
     reporting_deploy_replicas="$(deploy_replicas_for reporting)"
     admin_deploy_replicas="$(deploy_replicas_for admin)"
     app_deploy_replicas="$(deploy_replicas_for app)"
+    mobile_deploy_replicas="$(deploy_replicas_for mobile)"
     partner_deploy_replicas="$(deploy_replicas_for partner)"
     log "Starting extra app replicas behind $PROXY_SERVICE"
     $COMPOSE up -d --remove-orphans kafka
@@ -654,8 +664,9 @@ cmd_safe_deploy() {
         --scale reporting="$reporting_deploy_replicas" \
         --scale admin="$admin_deploy_replicas" \
         --scale app="$app_deploy_replicas" \
+        --scale mobile="$mobile_deploy_replicas" \
         --scale partner="$partner_deploy_replicas" \
-        server reporting admin app partner "$PROXY_SERVICE"
+        server reporting admin app mobile partner "$PROXY_SERVICE"
     reload_proxy
 
     wait_for_new_app_containers
@@ -664,7 +675,7 @@ cmd_safe_deploy() {
     echo ""
     echo -e "${BOLD}━━━  Removing old app containers  ━━━${NC}"
     local service
-    for service in server reporting admin app partner; do
+    for service in server reporting admin app mobile partner; do
         remove_outdated_service_containers "$service" "$(app_image_for "$service")" "$(replicas_for "$service")"
         reload_proxy
         wait_for_new_service_containers "$service" "$(app_image_for "$service")" "$(replicas_for "$service")"
@@ -674,6 +685,7 @@ cmd_safe_deploy() {
         --scale reporting="$REPORTING_REPLICAS" \
         --scale admin="$ADMIN_REPLICAS" \
         --scale app="$APP_REPLICAS" \
+        --scale mobile="$MOBILE_REPLICAS" \
         --scale partner="$PARTNER_REPLICAS" \
         "$PROXY_SERVICE"
     reload_proxy
@@ -714,9 +726,9 @@ cmd_health() {
     local all_ok=true
 
     # Parallel arrays - avoids associative arrays (bash 3.2 on macOS)
-    local svcs=("server" "reporting" "admin" "app" "apex-app" "partner")
-    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$APEX_APP_DOMAIN" "$PARTNER_DOMAIN")
-    local paths=("/health" "/health" "/health" "/" "/" "/health")
+    local svcs=("server" "reporting" "admin" "app" "apex-app" "mobile" "partner")
+    local domains=("$API_DOMAIN" "$REPORTING_DOMAIN" "$ADMIN_DOMAIN" "$APP_DOMAIN" "$APEX_APP_DOMAIN" "$MOBILE_DOMAIN" "$PARTNER_DOMAIN")
+    local paths=("/health" "/health" "/health" "/" "/" "/health" "/health")
     if observability_enabled; then
         svcs+=("app-otel" "signoz" "portainer" "otel-collector")
         domains+=("$APP_DOMAIN" "$SIGNOZ_DOMAIN" "$PORTAINER_DOMAIN" "$MONITOR_DOMAIN")
@@ -746,6 +758,7 @@ cmd_health() {
                 reporting) port="$REPORTING_PORT" ;;
                 admin)     port="$ADMIN_PORT" ;;
                 app)       port="$APP_PORT" ;;
+                mobile)    port="$MOBILE_PORT" ;;
                 partner)   port="$PARTNER_PORT" ;;
             esac
             url="${scheme}://${LOCAL_HEALTH_HOST}:${port}${path}"

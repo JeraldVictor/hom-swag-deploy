@@ -12,6 +12,7 @@ receivers:
         cors:
           allowed_origins:
             - ${env:OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_APP}
+            - ${env:OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_MOBILE}
             - ${env:OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_ADMIN}
             - ${env:OTEL_COLLECTOR_CORS_ALLOWED_ORIGIN_PARTNER}
             - http://localhost:8080
