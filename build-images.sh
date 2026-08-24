@@ -12,8 +12,10 @@
 #   ./build-images.sh --image-registry ghcr.io/owner --push-registry ghcr.io/owner
 #
 # Services: server, reporting, admin, app, mobile, partner
+# With no service arguments, every service above (including mobile) is built.
 # Builds/tags local images under IMAGE_REGISTRY. Only --push tags and pushes
-# the matching image to PUSH_REGISTRY.
+# the matching image to PUSH_REGISTRY. Runtime deployment remains an explicit,
+# health-checked step through deploy.sh.
 # =============================================================================
 set -euo pipefail
 
@@ -950,3 +952,8 @@ for service in "${SERVICES[@]}"; do
 done
 
 ok "Image build complete."
+
+if [[ "$PUSH" == true ]]; then
+    ok "Registry publish complete for: ${SERVICES[*]}"
+    log "Deploy the published images with: ./deploy.sh --env prod deploy"
+fi

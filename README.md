@@ -257,6 +257,8 @@ when publishing release images and deploying PROD:
 ./build-images.sh --env prod
 
 # Build and push production images to the registry.
+# With no service arguments this includes server, reporting, admin, app,
+# mobile, and partner. The mobile image is hom-swag-mobile.
 ./build-images.sh --env prod --push
 
 # Clean rebuild and push production images.
@@ -267,6 +269,8 @@ when publishing release images and deploying PROD:
 ./build-images.sh --env prod admin app --push
 
 # Graceful production deploy. This is also the default if --env is omitted.
+# Publishing images does not mutate the running stack; deploy is the separate,
+# health-checked rollout step.
 ./deploy.sh --env prod deploy
 
 # Validate production public routes.
