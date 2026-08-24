@@ -300,6 +300,26 @@ Run commands inside production containers:
 Be careful with production seeds. Prefer scoped, idempotent/upsert commands
 such as `--upsert --only=reports` unless you intentionally need a broader seed.
 
+Production seed and migration safety:
+
+- `pnpm seed` is always non-destructive by default, including unscoped seeds.
+- The application seed CLI does not contain a database-drop path. `--drop` is
+  always refused, regardless of environment or database host.
+- Production schema/data changes should use a scoped, idempotent migration that
+  performs a dry run by default and requires `--apply` to write.
+- Before applying a production migration, create or verify a provider point-in-time
+  backup/fork and review the dry-run output.
+
+Mobile live-feed feature flag rollout:
+
+```bash
+# Dry run (default)
+./deploy.sh --env prod exec server -- pnpm script:prod -- --file=migrate-mobile-app-live-feed-flag
+
+# Apply after reviewing the dry run and confirming a recovery point
+./deploy.sh --env prod exec server -- pnpm script:prod -- --file=migrate-mobile-app-live-feed-flag --apply
+```
+
 Production safety rules:
 
 - Build/deploy defaults to `prod` when no `--env` is provided.
