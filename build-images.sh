@@ -94,6 +94,14 @@ require_prod_url() {
     fi
 }
 
+require_prod_value() {
+    local name="$1"
+    local value="${2:-}"
+    if is_prod_profile; then
+        [[ -n "$value" ]] || die "$name is required for production image builds"
+    fi
+}
+
 frontend_api_url() {
     local api_url="${VITE_API_BASE_URL:-}"
     if ! is_prod_profile; then
@@ -352,8 +360,13 @@ run_node_test_gate() {
 
     if npm_script_exists "$source" "test"; then
         test_cmd=(pnpm test)
+    elif npm_script_exists "$source" "test:unit" && rg -q '"vitest"' "$source/package.json"; then
+        # Older Vitest/Vue Test Utils combinations in the partner app leak
+        # custom-element compiler state between worker threads. Run the release
+        # gate once, sequentially, instead of starting the watch-mode script.
+        test_cmd=(pnpm exec vitest run --threads=false)
     elif npm_script_exists "$source" "test:unit"; then
-        test_cmd=(pnpm test:unit --run)
+        test_cmd=(pnpm test:unit)
     elif rg -q '"vitest"' "$source/package.json"; then
         test_cmd=(pnpm exec vitest run)
     else
@@ -365,7 +378,7 @@ run_node_test_gate() {
     echo -e "${BOLD}━━━  Testing ${service} before image build  ━━━${NC}"
     log "Source: $source"
     log "Command: ${test_cmd[*]}"
-    (cd "$source" && "${test_cmd[@]}")
+    (cd "$source" && NODE_ENV=test "${test_cmd[@]}")
     ok "${service} test suite passed"
 }
 
@@ -477,6 +490,7 @@ VITE_MEDIA_BASE_URL=$media_url
 VITE_REPORTING_BASE_URL=$reporting_url
 VITE_REPORTING_SERVICE_URL=$reporting_url
 VITE_REPORTING_API_TOKEN=${VITE_REPORTING_API_TOKEN:-${REPORTING_API_TOKEN:-}}
+VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY:-}
 VITE_ENABLE_RUM=${VITE_ENABLE_RUM:-false}
 VITE_RUM_TRACES_ENDPOINT=${VITE_RUM_TRACES_ENDPOINT:-}
 VITE_RUM_SERVICE_NAME=${VITE_ADMIN_RUM_SERVICE_NAME:-admin-app}
@@ -877,6 +891,7 @@ build_service() {
         portainer_url="$(admin_utility_url VITE_PORTAINER_URL https://localhost:9443 https://ports.homswag.com)"
         monitor_url="$(admin_utility_url VITE_MONITOR_URL http://localhost:14318 https://monitor.homswag.com)"
         require_prod_url VITE_REPORTING_BASE_URL "$reporting_url"
+        require_prod_value VITE_GOOGLE_MAPS_API_KEY "${VITE_GOOGLE_MAPS_API_KEY:-}"
         require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
         require_prod_url VITE_PARTNER_APP_URL "$partner_app_url"
         require_prod_url VITE_SIGNOZ_URL "$signoz_url"
@@ -885,6 +900,7 @@ build_service() {
         args+=(--build-arg "HS_REPORTING_URL=$reporting_url")
         args+=(--build-arg "HS_REPORTING_SERVICE_URL=$reporting_url")
         args+=(--build-arg "HS_REPORTING_API_TOKEN=${VITE_REPORTING_API_TOKEN:-${REPORTING_API_TOKEN:-}}")
+        args+=(--build-arg "HS_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY:-}")
         args+=(--build-arg "HS_CUSTOMER_APP_URL=$customer_app_url")
         args+=(--build-arg "HS_PARTNER_APP_URL=$partner_app_url")
         args+=(--build-arg "HS_SIGNOZ_URL=$signoz_url")

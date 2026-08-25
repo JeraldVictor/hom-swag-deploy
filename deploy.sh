@@ -191,6 +191,19 @@ while IFS= read -r line || [[ -n "$line" ]]; do
     fi
 done < "$ENV_FILE"
 
+if [[ "$ENV_PROFILE" == "prod" || "$ENV_PROFILE" == "production" ]]; then
+    public_server_url="${APP_URL:-}"
+    frontend_api_url="${VITE_API_BASE_URL:-}"
+    [[ -n "$public_server_url" ]] || die "APP_URL is required for production deployments"
+    [[ -n "$frontend_api_url" ]] || die "VITE_API_BASE_URL is required for production deployments"
+
+    public_server_url="${public_server_url%/}"
+    frontend_api_url="${frontend_api_url%/}"
+    if [[ "$public_server_url" != "$frontend_api_url" ]]; then
+        die "APP_URL must match VITE_API_BASE_URL so API and media URLs use the public backend origin"
+    fi
+fi
+
 AUTO_SEED_REPORT_DEFINITIONS="${AUTO_SEED_REPORT_DEFINITIONS:-true}"
 PROXY_STACK="${PROXY_STACK:-caddy}"
 case "$PROXY_STACK" in
