@@ -15,21 +15,23 @@ RUN pnpm install --no-frozen-lockfile --ignore-scripts \
     && pnpm rebuild esbuild
 
 # Build-time URLs (available to Vite/TanStack build)
-ARG HS_API_URL=https://api.alpha.homswag.com
-ARG HS_LOGIN_URL=https://api.alpha.homswag.com
-ARG HS_MEDIA_URL=https://api.alpha.homswag.com
-ARG HS_BFF_URL=https://api.alpha.homswag.com/bff
-ARG HS_SERVER_BFF_URL=https://api.alpha.homswag.com/bff
+ARG HS_API_URL=
+ARG HS_LOGIN_URL=
+ARG HS_MEDIA_URL=
+ARG HS_BFF_URL=
+ARG HS_SERVER_BFF_URL=
 ARG HS_ENABLE_RUM=false
 ARG HS_RUM_TRACES_ENDPOINT=
-ARG VITE_GOOGLE_MAPS_API_KEY=AIzaSyCcJWQTpEJIrbFBAHTydTN9Q-ml2NZLVNI
 ARG HS_RUM_SERVICE_NAME=customer-app
 ARG HS_DEPLOYMENT_ENVIRONMENT=production
 
 # Copy source and build
 COPY repos/app/ .
-RUN printf 'VITE_API_BASE_URL=%s\nVITE_AUTH_API_BASE_URL=%s\nVITE_MEDIA_BASE_URL=%s\nVITE_BFF_BASE_URL=%s\nVITE_ENABLE_RUM=%s\nVITE_RUM_TRACES_ENDPOINT=%s\nVITE_RUM_SERVICE_NAME=%s\nVITE_DEPLOYMENT_ENVIRONMENT=%s\nPUBLIC_API_BASE_URL=%s\nMEDIA_BASE_URL=%s\nBFF_BASE_URL=%s\nVITE_GOOGLE_MAPS_API_KEY=%s\n' \
-        "$HS_API_URL" "$HS_LOGIN_URL" "$HS_MEDIA_URL" "$HS_BFF_URL" "$HS_ENABLE_RUM" "$HS_RUM_TRACES_ENDPOINT" "$HS_RUM_SERVICE_NAME" "$HS_DEPLOYMENT_ENVIRONMENT" "$HS_API_URL" "$HS_MEDIA_URL" "$HS_SERVER_BFF_URL" "$VITE_GOOGLE_MAPS_API_KEY" > .env.production \
+RUN --mount=type=secret,id=VITE_GOOGLE_MAPS_API_KEY,required=true \
+    MAPS_KEY="$(cat /run/secrets/VITE_GOOGLE_MAPS_API_KEY)" \
+    && test -n "$MAPS_KEY" \
+    && printf 'VITE_API_BASE_URL=%s\nVITE_AUTH_API_BASE_URL=%s\nVITE_MEDIA_BASE_URL=%s\nVITE_BFF_BASE_URL=%s\nVITE_ENABLE_RUM=%s\nVITE_RUM_TRACES_ENDPOINT=%s\nVITE_RUM_SERVICE_NAME=%s\nVITE_DEPLOYMENT_ENVIRONMENT=%s\nPUBLIC_API_BASE_URL=%s\nMEDIA_BASE_URL=%s\nBFF_BASE_URL=%s\nVITE_GOOGLE_MAPS_API_KEY=%s\n' \
+        "$HS_API_URL" "$HS_LOGIN_URL" "$HS_MEDIA_URL" "$HS_BFF_URL" "$HS_ENABLE_RUM" "$HS_RUM_TRACES_ENDPOINT" "$HS_RUM_SERVICE_NAME" "$HS_DEPLOYMENT_ENVIRONMENT" "$HS_API_URL" "$HS_MEDIA_URL" "$HS_SERVER_BFF_URL" "$MAPS_KEY" > .env.production \
     && cp .env.production .env.prod \
     && pnpm build \
     && node -e 'const fs=require("fs"),path=require("path"); const [from,to]=process.argv.slice(1); const walk=(dir)=>{for(const ent of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,ent.name); if(ent.isDirectory()) walk(p); else if(/\.(mjs|js|json)$/.test(ent.name)){const s=fs.readFileSync(p,"utf8"); const n=s.split(from).join(to); if(n!==s) fs.writeFileSync(p,n);}}}; if(from&&to&&from!==to) walk(".output/server");' "$HS_BFF_URL" "$HS_SERVER_BFF_URL" \
@@ -45,13 +47,12 @@ COPY --from=builder /app/.output ./.output
 
 EXPOSE 3000
 
-ARG HS_BFF_URL=https://api.alpha.homswag.com/bff
-ARG HS_SERVER_BFF_URL=https://api.alpha.homswag.com/bff
+ARG HS_BFF_URL=
+ARG HS_SERVER_BFF_URL=
 
 ENV PORT=3000 \
     NODE_ENV=production \
     BFF_BASE_URL=$HS_SERVER_BFF_URL \
-    VITE_BFF_BASE_URL=$HS_BFF_URL \
-    VITE_GOOGLE_MAPS_API_KEY=$VITE_GOOGLE_MAPS_API_KEY
+    VITE_BFF_BASE_URL=$HS_BFF_URL
 
 CMD ["node", ".output/server/index.mjs"]

@@ -252,6 +252,7 @@ print_resolved_env() {
     echo -e "  VITE_MEDIA_BASE_URL   : ${BOLD}${media_url}${NC}"
     echo -e "  VITE_BFF_BASE_URL     : ${BOLD}${bff_url}${NC}"
     echo -e "  BFF_BASE_URL          : ${BOLD}${server_bff}${NC}"
+    echo -e "  VITE_GOOGLE_MAPS_API_KEY: ${BOLD}$([[ -n "${VITE_GOOGLE_MAPS_API_KEY:-}" ]] && echo set || echo unset)${NC}"
     echo -e "  VITE_REPORTING_BASE_URL: ${BOLD}${reporting_url}${NC}"
     echo -e "  VITE_REPORTING_SERVICE_URL: ${BOLD}${reporting_url}${NC}"
     echo -e "  VITE_REPORTING_API_TOKEN: ${BOLD}$([[ -n "${VITE_REPORTING_API_TOKEN:-${REPORTING_API_TOKEN:-}}" ]] && echo set || echo unset)${NC}"
@@ -415,6 +416,8 @@ write_frontend_env_files() {
             require_prod_url VITE_AUTH_API_BASE_URL "$login_url"
             require_prod_url VITE_MEDIA_BASE_URL "$media_url"
             require_prod_url VITE_BFF_BASE_URL "$bff_url"
+            require_prod_url BFF_BASE_URL "$server_bff"
+            require_prod_value VITE_GOOGLE_MAPS_API_KEY "${VITE_GOOGLE_MAPS_API_KEY:-}"
 
             cat > "$target_dir/.env.prod" <<EOF
 VITE_API_BASE_URL=$api_url
@@ -428,6 +431,7 @@ PUBLIC_API_BASE_URL=$api_url
 MEDIA_BASE_URL=$media_url
 BFF_BASE_URL=$server_bff
 VITE_BFF_BASE_URL=$bff_url
+VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY:-}
 EOF
             cp "$target_dir/.env.prod" "$target_dir/.env.production"
             ;;
@@ -860,8 +864,10 @@ build_service() {
         server_bff="$(server_bff_url)"
         require_prod_url VITE_BFF_BASE_URL "$bff_url"
         require_prod_url BFF_BASE_URL "$server_bff"
+        require_prod_value VITE_GOOGLE_MAPS_API_KEY "${VITE_GOOGLE_MAPS_API_KEY:-}"
         args+=(--build-arg "HS_BFF_URL=$bff_url")
         args+=(--build-arg "HS_SERVER_BFF_URL=$server_bff")
+        args+=(--secret "id=VITE_GOOGLE_MAPS_API_KEY,env=VITE_GOOGLE_MAPS_API_KEY")
         args+=(--build-arg "HS_RUM_SERVICE_NAME=${VITE_APP_RUM_SERVICE_NAME:-customer-app}")
     fi
 
