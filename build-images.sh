@@ -255,7 +255,6 @@ print_resolved_env() {
     echo -e "  VITE_GOOGLE_MAPS_API_KEY: ${BOLD}$([[ -n "${VITE_GOOGLE_MAPS_API_KEY:-}" ]] && echo set || echo unset)${NC}"
     echo -e "  VITE_REPORTING_BASE_URL: ${BOLD}${reporting_url}${NC}"
     echo -e "  VITE_REPORTING_SERVICE_URL: ${BOLD}${reporting_url}${NC}"
-    echo -e "  VITE_REPORTING_API_TOKEN: ${BOLD}$([[ -n "${VITE_REPORTING_API_TOKEN:-${REPORTING_API_TOKEN:-}}" ]] && echo set || echo unset)${NC}"
     echo -e "  VITE_CUSTOMER_APP_URL : ${BOLD}${customer_app_url:-unset}${NC}"
     echo -e "  VITE_PARTNER_APP_URL  : ${BOLD}${partner_app_url}${NC}"
     echo -e "  VITE_SIGNOZ_URL       : ${BOLD}${signoz_url}${NC}"
@@ -357,19 +356,21 @@ run_node_test_gate() {
         return
     fi
 
-    command -v pnpm &>/dev/null || die "pnpm is required to run ${service} tests before image build"
-
     if npm_script_exists "$source" "test"; then
-        test_cmd=(pnpm test)
+		command -v npm &>/dev/null || die "npm is required to run ${service} tests before image build"
+		test_cmd=(npm run test --)
     elif npm_script_exists "$source" "test:unit" && rg -q '"vitest"' "$source/package.json"; then
         # Older Vitest/Vue Test Utils combinations in the partner app leak
         # custom-element compiler state between worker threads. Run the release
         # gate once, sequentially, instead of starting the watch-mode script.
-        test_cmd=(pnpm exec vitest run --threads=false)
+		[[ -x "$source/node_modules/.bin/vitest" ]] || die "${service} dependencies are not installed; missing node_modules/.bin/vitest"
+		test_cmd=(./node_modules/.bin/vitest run --threads=false)
     elif npm_script_exists "$source" "test:unit"; then
-        test_cmd=(pnpm test:unit)
+		command -v npm &>/dev/null || die "npm is required to run ${service} tests before image build"
+		test_cmd=(npm run test:unit --)
     elif rg -q '"vitest"' "$source/package.json"; then
-        test_cmd=(pnpm exec vitest run)
+		[[ -x "$source/node_modules/.bin/vitest" ]] || die "${service} dependencies are not installed; missing node_modules/.bin/vitest"
+		test_cmd=(./node_modules/.bin/vitest run)
     else
         warn "Skipping ${service} tests: package has tests but no known runnable test command"
         return
@@ -493,7 +494,6 @@ VITE_AUTH_API_BASE_URL=$login_url
 VITE_MEDIA_BASE_URL=$media_url
 VITE_REPORTING_BASE_URL=$reporting_url
 VITE_REPORTING_SERVICE_URL=$reporting_url
-VITE_REPORTING_API_TOKEN=${VITE_REPORTING_API_TOKEN:-${REPORTING_API_TOKEN:-}}
 VITE_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY:-}
 VITE_ENABLE_RUM=${VITE_ENABLE_RUM:-false}
 VITE_RUM_TRACES_ENDPOINT=${VITE_RUM_TRACES_ENDPOINT:-}
@@ -905,8 +905,7 @@ build_service() {
         require_prod_url VITE_MONITOR_URL "$monitor_url"
         args+=(--build-arg "HS_REPORTING_URL=$reporting_url")
         args+=(--build-arg "HS_REPORTING_SERVICE_URL=$reporting_url")
-        args+=(--build-arg "HS_REPORTING_API_TOKEN=${VITE_REPORTING_API_TOKEN:-${REPORTING_API_TOKEN:-}}")
-        args+=(--build-arg "HS_GOOGLE_MAPS_API_KEY=${VITE_GOOGLE_MAPS_API_KEY:-}")
+		args+=(--secret "id=VITE_GOOGLE_MAPS_API_KEY,env=VITE_GOOGLE_MAPS_API_KEY")
         args+=(--build-arg "HS_CUSTOMER_APP_URL=$customer_app_url")
         args+=(--build-arg "HS_PARTNER_APP_URL=$partner_app_url")
         args+=(--build-arg "HS_SIGNOZ_URL=$signoz_url")
