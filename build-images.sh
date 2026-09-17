@@ -214,7 +214,7 @@ admin_utility_url() {
 }
 
 print_resolved_env() {
-    local api_url login_url media_url bff_url server_bff reporting_url customer_app_url partner_api_url partner_ws
+    local api_url login_url media_url bff_url server_bff reporting_url customer_app_url customer_mobile_app_url partner_api_url partner_ws
     local partner_app_url signoz_url portainer_url monitor_url
     api_url="$(frontend_api_url)"
     login_url="$(frontend_login_url)"
@@ -223,6 +223,7 @@ print_resolved_env() {
     server_bff="$(server_bff_url)"
     reporting_url="$(frontend_reporting_url)"
     customer_app_url="${VITE_CUSTOMER_APP_URL:-}"
+    customer_mobile_app_url="${VITE_CUSTOMER_MOBILE_APP_URL:-}"
     partner_api_url="$(partner_bff_api_url)"
     partner_ws="$(partner_ws_url)"
     partner_app_url="$(admin_utility_url VITE_PARTNER_APP_URL http://localhost:8090 https://partner.homswag.com)"
@@ -237,6 +238,7 @@ print_resolved_env() {
     require_prod_url VITE_REPORTING_BASE_URL "$reporting_url"
     require_prod_url VITE_REPORTING_SERVICE_URL "$reporting_url"
     require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
+    require_prod_url VITE_CUSTOMER_MOBILE_APP_URL "$customer_mobile_app_url"
     require_prod_url VITE_PARTNER_APP_URL "$partner_app_url"
     require_prod_url VITE_SIGNOZ_URL "$signoz_url"
     require_prod_url VITE_PORTAINER_URL "$portainer_url"
@@ -256,6 +258,7 @@ print_resolved_env() {
     echo -e "  VITE_REPORTING_BASE_URL: ${BOLD}${reporting_url}${NC}"
     echo -e "  VITE_REPORTING_SERVICE_URL: ${BOLD}${reporting_url}${NC}"
     echo -e "  VITE_CUSTOMER_APP_URL : ${BOLD}${customer_app_url:-unset}${NC}"
+    echo -e "  VITE_CUSTOMER_MOBILE_APP_URL: ${BOLD}${customer_mobile_app_url:-unset}${NC}"
     echo -e "  VITE_PARTNER_APP_URL  : ${BOLD}${partner_app_url}${NC}"
     echo -e "  VITE_SIGNOZ_URL       : ${BOLD}${signoz_url}${NC}"
     echo -e "  VITE_PORTAINER_URL    : ${BOLD}${portainer_url}${NC}"
@@ -467,12 +470,13 @@ EOF
             ;;
         admin)
             local api_url login_url media_url reporting_url
-            local customer_app_url partner_app_url signoz_url portainer_url monitor_url
+            local customer_app_url customer_mobile_app_url partner_app_url signoz_url portainer_url monitor_url
             api_url="$(frontend_api_url)"
             login_url="$(frontend_login_url)"
             media_url="$(frontend_media_url)"
             reporting_url="$(frontend_reporting_url)"
             customer_app_url="${VITE_CUSTOMER_APP_URL:-}"
+            customer_mobile_app_url="${VITE_CUSTOMER_MOBILE_APP_URL:-}"
             partner_app_url="$(admin_utility_url VITE_PARTNER_APP_URL http://localhost:8090 https://partner.homswag.com)"
             signoz_url="$(admin_utility_url VITE_SIGNOZ_URL http://localhost:9080 https://signoz.homswag.com)"
             portainer_url="$(admin_utility_url VITE_PORTAINER_URL https://localhost:9443 https://ports.homswag.com)"
@@ -483,6 +487,7 @@ EOF
             require_prod_url VITE_MEDIA_BASE_URL "$media_url"
             require_prod_url VITE_REPORTING_BASE_URL "$reporting_url"
             require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
+            require_prod_url VITE_CUSTOMER_MOBILE_APP_URL "$customer_mobile_app_url"
             require_prod_url VITE_PARTNER_APP_URL "$partner_app_url"
             require_prod_url VITE_SIGNOZ_URL "$signoz_url"
             require_prod_url VITE_PORTAINER_URL "$portainer_url"
@@ -502,6 +507,7 @@ VITE_DEPLOYMENT_ENVIRONMENT=${VITE_DEPLOYMENT_ENVIRONMENT:-${DEPLOYMENT_ENVIRONM
 PUBLIC_API_BASE_URL=$api_url
 MEDIA_BASE_URL=$media_url
 VITE_CUSTOMER_APP_URL=$customer_app_url
+VITE_CUSTOMER_MOBILE_APP_URL=$customer_mobile_app_url
 VITE_PARTNER_APP_URL=$partner_app_url
 VITE_SIGNOZ_URL=$signoz_url
 VITE_PORTAINER_URL=$portainer_url
@@ -889,9 +895,10 @@ build_service() {
     fi
 
     if [[ "$service" == "admin" ]]; then
-        local reporting_url customer_app_url partner_app_url signoz_url portainer_url monitor_url
+        local reporting_url customer_app_url customer_mobile_app_url partner_app_url signoz_url portainer_url monitor_url
         reporting_url="$(frontend_reporting_url)"
         customer_app_url="${VITE_CUSTOMER_APP_URL:-}"
+        customer_mobile_app_url="${VITE_CUSTOMER_MOBILE_APP_URL:-}"
         partner_app_url="$(admin_utility_url VITE_PARTNER_APP_URL http://localhost:8090 https://partner.homswag.com)"
         signoz_url="$(admin_utility_url VITE_SIGNOZ_URL http://localhost:9080 https://signoz.homswag.com)"
         portainer_url="$(admin_utility_url VITE_PORTAINER_URL https://localhost:9443 https://ports.homswag.com)"
@@ -899,6 +906,7 @@ build_service() {
         require_prod_url VITE_REPORTING_BASE_URL "$reporting_url"
         require_prod_value VITE_GOOGLE_MAPS_API_KEY "${VITE_GOOGLE_MAPS_API_KEY:-}"
         require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
+        require_prod_url VITE_CUSTOMER_MOBILE_APP_URL "$customer_mobile_app_url"
         require_prod_url VITE_PARTNER_APP_URL "$partner_app_url"
         require_prod_url VITE_SIGNOZ_URL "$signoz_url"
         require_prod_url VITE_PORTAINER_URL "$portainer_url"
@@ -907,6 +915,7 @@ build_service() {
         args+=(--build-arg "HS_REPORTING_SERVICE_URL=$reporting_url")
 		args+=(--secret "id=VITE_GOOGLE_MAPS_API_KEY,env=VITE_GOOGLE_MAPS_API_KEY")
         args+=(--build-arg "HS_CUSTOMER_APP_URL=$customer_app_url")
+        args+=(--build-arg "HS_CUSTOMER_MOBILE_APP_URL=$customer_mobile_app_url")
         args+=(--build-arg "HS_PARTNER_APP_URL=$partner_app_url")
         args+=(--build-arg "HS_SIGNOZ_URL=$signoz_url")
         args+=(--build-arg "HS_PORTAINER_URL=$portainer_url")
