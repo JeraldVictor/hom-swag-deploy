@@ -215,7 +215,7 @@ admin_utility_url() {
 
 print_resolved_env() {
     local api_url login_url media_url bff_url server_bff reporting_url customer_app_url customer_mobile_app_url partner_api_url partner_ws
-    local partner_app_url signoz_url portainer_url monitor_url
+    local partner_app_url signoz_url portainer_url monitor_url mobile_office_slug
     api_url="$(frontend_api_url)"
     login_url="$(frontend_login_url)"
     media_url="$(frontend_media_url)"
@@ -224,6 +224,7 @@ print_resolved_env() {
     reporting_url="$(frontend_reporting_url)"
     customer_app_url="${VITE_CUSTOMER_APP_URL:-}"
     customer_mobile_app_url="${VITE_CUSTOMER_MOBILE_APP_URL:-}"
+    mobile_office_slug="${VITE_OFFICE_SLUG:-}"
     partner_api_url="$(partner_bff_api_url)"
     partner_ws="$(partner_ws_url)"
     partner_app_url="$(admin_utility_url VITE_PARTNER_APP_URL http://localhost:8090 https://partner.homswag.com)"
@@ -239,6 +240,9 @@ print_resolved_env() {
     require_prod_url VITE_REPORTING_SERVICE_URL "$reporting_url"
     require_prod_url VITE_CUSTOMER_APP_URL "$customer_app_url"
     require_prod_url VITE_CUSTOMER_MOBILE_APP_URL "$customer_mobile_app_url"
+    if services_include mobile; then
+        require_prod_value VITE_OFFICE_SLUG "$mobile_office_slug"
+    fi
     require_prod_url VITE_PARTNER_APP_URL "$partner_app_url"
     require_prod_url VITE_SIGNOZ_URL "$signoz_url"
     require_prod_url VITE_PORTAINER_URL "$portainer_url"
@@ -259,6 +263,7 @@ print_resolved_env() {
     echo -e "  VITE_REPORTING_SERVICE_URL: ${BOLD}${reporting_url}${NC}"
     echo -e "  VITE_CUSTOMER_APP_URL : ${BOLD}${customer_app_url:-unset}${NC}"
     echo -e "  VITE_CUSTOMER_MOBILE_APP_URL: ${BOLD}${customer_mobile_app_url:-unset}${NC}"
+    echo -e "  VITE_OFFICE_SLUG     : ${BOLD}${mobile_office_slug:-unset}${NC}"
     echo -e "  VITE_PARTNER_APP_URL  : ${BOLD}${partner_app_url}${NC}"
     echo -e "  VITE_SIGNOZ_URL       : ${BOLD}${signoz_url}${NC}"
     echo -e "  VITE_PORTAINER_URL    : ${BOLD}${portainer_url}${NC}"
@@ -878,20 +883,26 @@ build_service() {
     fi
 
     if [[ "$service" == "mobile" ]]; then
-        local mobile_bff_url mobile_ws_url
+        local mobile_bff_url mobile_ws_url mobile_office_slug
         mobile_bff_url="$(frontend_bff_url)"
         mobile_ws_url="${VITE_WS_URL:-}"
+        mobile_office_slug="${VITE_OFFICE_SLUG:-}"
+        if ! is_prod_profile; then
+            mobile_office_slug="${mobile_office_slug:-bangalore}"
+        fi
         if [[ -z "$mobile_ws_url" ]]; then
             mobile_ws_url="${api_url/https:/wss:}"
             mobile_ws_url="${mobile_ws_url/http:/ws:}"
         fi
         require_prod_url VITE_BFF_BASE_URL "$mobile_bff_url"
         require_prod_url VITE_WS_URL "$mobile_ws_url"
+        require_prod_value VITE_OFFICE_SLUG "$mobile_office_slug"
         args+=(--build-arg "HS_BFF_URL=$mobile_bff_url")
         args+=(--build-arg "HS_WS_URL=$mobile_ws_url")
         args+=(--build-arg "HS_MAPS_BROWSER_VALUE=${VITE_GOOGLE_MAPS_API_KEY:-}")
         args+=(--build-arg "HS_FEATURE_MAPS=${VITE_FEATURE_MAPS:-true}")
         args+=(--build-arg "HS_FEATURE_DIRECTIONS=${VITE_FEATURE_DIRECTIONS:-true}")
+        args+=(--build-arg "HS_OFFICE_SLUG=$mobile_office_slug")
     fi
 
     if [[ "$service" == "admin" ]]; then
